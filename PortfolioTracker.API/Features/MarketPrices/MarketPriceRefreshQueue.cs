@@ -56,8 +56,6 @@ public class MarketPriceRefreshQueue : IMarketPriceRefreshQueue
         if (string.IsNullOrWhiteSpace(normalizedSymbol))
             return false;
 
-        return _pending.ContainsKey(normalizedSymbol)
-            || _processing.ContainsKey(normalizedSymbol);
+        return _pending.ContainsKey(normalizedSymbol) || _processing.ContainsKey(normalizedSymbol);
     }
 }
-

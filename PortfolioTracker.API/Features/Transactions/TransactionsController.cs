@@ -1,4 +1,3 @@
-using PortfolioTracker.API.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace PortfolioTracker.API.Features.Transactions;
@@ -35,9 +34,19 @@ public class TransactionsController(ITransactionService transactionService) : Co
     /// <summary>Creates a new transaction and returns the created resource.</summary>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create(CreateTransactionRequest request)
     {
-        var transaction = await transactionService.CreateAsync(request);
+        TransactionResponse transaction;
+        try
+        {
+            transaction = await transactionService.CreateAsync(request);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
         return CreatedAtAction(nameof(GetById), new { id = transaction.Id }, transaction);
     }
 
@@ -55,7 +64,16 @@ public class TransactionsController(ITransactionService transactionService) : Co
         if (id != request.Id)
             return BadRequest();
 
-        var updated = await transactionService.UpdateAsync(id, request);
+        bool updated;
+        try
+        {
+            updated = await transactionService.UpdateAsync(id, request);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
         if (!updated)
             return NotFound();
 

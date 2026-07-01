@@ -1,9 +1,13 @@
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using PortfolioTracker.API.Features.Assets;
+using PortfolioTracker.API.Infrastructure.Persistence;
 
 namespace PortfolioTracker.API.Features.MarketPrices;
 
 public class MarketDataServicePriceProvider(
     HttpClient httpClient,
+    ApplicationDbContext context,
     ILogger<MarketDataServicePriceProvider> logger
 ) : IMarketPriceProvider
 {
@@ -18,8 +22,12 @@ public class MarketDataServicePriceProvider(
 
         try
         {
+            var assetMetadata = await ResolveAssetMetadataAsync(
+                normalizedSymbol,
+                cancellationToken
+            );
             var response = await httpClient.GetFromJsonAsync<MarketDataQuoteResponse>(
-                $"quotes/{Uri.EscapeDataString(normalizedSymbol)}?assetType=auto",
+                $"quotes/{Uri.EscapeDataString(assetMetadata.ProviderSymbol)}?assetType={assetMetadata.AssetType}",
                 cancellationToken
             );
 
@@ -29,20 +37,22 @@ public class MarketDataServicePriceProvider(
                     "Fiyat sağlayıcı boş cevap döndü"
                 );
 
-            if (!response.IsAvailable || response.CurrentPrice is null || response.CurrentPrice <= 0)
+            if (
+                !response.IsAvailable
+                || response.CurrentPrice is null
+                || response.CurrentPrice <= 0
+            )
                 return MarketPriceQuote.Unavailable(
                     normalizedSymbol,
                     response.Error ?? "Fiyat alınamadı"
                 );
 
-            var responseSymbol = MarketPriceSymbols.Normalize(response.Symbol);
-
             return new MarketPriceQuote
             {
-                Symbol = string.IsNullOrWhiteSpace(responseSymbol)
-                    ? normalizedSymbol
-                    : responseSymbol,
-                CompanyName = response.Name,
+                Symbol = normalizedSymbol,
+                CompanyName = string.IsNullOrWhiteSpace(response.Name)
+                    ? assetMetadata.Name
+                    : response.Name,
                 CurrentPrice = response.CurrentPrice,
                 FetchedAt = response.FetchedAt ?? DateTime.UtcNow,
                 DelayMinutes = 0,
@@ -54,21 +64,65 @@ public class MarketDataServicePriceProvider(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            logger.LogWarning(ex, "Market data service quote request failed for {Symbol}", normalizedSymbol);
-            return MarketPriceQuote.Unavailable(
-                normalizedSymbol,
-                "Fiyat sağlayıcıya ulaşılamadı"
+            logger.LogWarning(
+                ex,
+                "Market data service quote request failed for {Symbol}",
+                normalizedSymbol
             );
+            return MarketPriceQuote.Unavailable(normalizedSymbol, "Fiyat sağlayıcıya ulaşılamadı");
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Market data service quote response could not be read for {Symbol}", normalizedSymbol);
+            logger.LogWarning(
+                ex,
+                "Market data service quote response could not be read for {Symbol}",
+                normalizedSymbol
+            );
             return MarketPriceQuote.Unavailable(
                 normalizedSymbol,
                 "Fiyat sağlayıcı cevabı okunamadı"
             );
         }
     }
+
+    private async Task<AssetMetadata> ResolveAssetMetadataAsync(
+        string normalizedSymbol,
+        CancellationToken cancellationToken
+    )
+    {
+        var assets = await context
+            .Assets.AsNoTracking()
+            .Where(asset => asset.IsActive && asset.Symbol == normalizedSymbol)
+            .Select(asset => new
+            {
+                asset.AssetType,
+                asset.Market,
+                asset.Name,
+                asset.ProviderSymbol,
+            })
+            .ToListAsync(cancellationToken);
+
+        if (assets.Count == 0)
+            return new AssetMetadata("auto", normalizedSymbol, null);
+
+        if (assets.Count == 1)
+            return new AssetMetadata(assets[0].AssetType, assets[0].ProviderSymbol, assets[0].Name);
+
+        var preferredAssetType =
+            normalizedSymbol.Length == 3
+                ? assets.FirstOrDefault(asset => asset.AssetType == "fund")?.AssetType
+                : assets.FirstOrDefault(asset => asset.AssetType == "stock")?.AssetType;
+        var selectedAsset =
+            assets.FirstOrDefault(asset => asset.AssetType == preferredAssetType) ?? assets[0];
+
+        return new AssetMetadata(
+            selectedAsset.AssetType,
+            selectedAsset.ProviderSymbol,
+            selectedAsset.Name
+        );
+    }
+
+    private sealed record AssetMetadata(string AssetType, string ProviderSymbol, string? Name);
 
     private sealed record MarketDataQuoteResponse
     {

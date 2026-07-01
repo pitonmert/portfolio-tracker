@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import type { PortfolioPosition } from "../../../types/portfolio";
-import type { FilterType, SortType } from "../components/FilterBar";
-import { isClosedPosition, normalizeSearch } from "../utils/helpers";
-import { getActivePositionCost } from "../utils/portfolioCalculations";
+import type { PortfolioPosition } from "@/types/portfolio";
+import type { FilterType, SortType } from "@/pages/portfolio/portfolioControls";
+import { normalizeSearch } from "@/pages/portfolio/utils/helpers";
 
 function compareSymbol(a: PortfolioPosition, b: PortfolioPosition): number {
   return a.symbol.localeCompare(b.symbol, "tr-TR", { sensitivity: "base" });
@@ -25,8 +24,8 @@ function compareClosedState(
   b: PortfolioPosition,
   closedFirst: boolean,
 ): number {
-  const aClosed = isClosedPosition(a.netQuantity);
-  const bClosed = isClosedPosition(b.netQuantity);
+  const aClosed = a.isClosed;
+  const bClosed = b.isClosed;
 
   if (aClosed !== bClosed) {
     return aClosed === closedFirst ? -1 : 1;
@@ -44,13 +43,23 @@ function sortPositions(
       case "symbol_desc":
         return compareSymbol(b, a);
       case "invested_desc":
-        return compareNumber(a, b, getActivePositionCost, "desc");
+        return compareNumber(
+          a,
+          b,
+          (position) => position.activePositionCost,
+          "desc",
+        );
       case "invested_asc":
-        return compareNumber(a, b, getActivePositionCost, "asc");
+        return compareNumber(
+          a,
+          b,
+          (position) => position.activePositionCost,
+          "asc",
+        );
       case "pnl_desc":
-        return compareNumber(a, b, (position) => position.realizedPnL, "desc");
+        return compareNumber(a, b, (position) => position.totalPnL, "desc");
       case "pnl_asc":
-        return compareNumber(a, b, (position) => position.realizedPnL, "asc");
+        return compareNumber(a, b, (position) => position.totalPnL, "asc");
       case "quantity_desc":
         return compareNumber(a, b, (position) => position.netQuantity, "desc");
       case "quantity_asc":
@@ -88,7 +97,7 @@ export function useFilteredPositions(
     });
     const filterCounts = searchedRows.reduce(
       (counts, position) => {
-        if (isClosedPosition(position.netQuantity)) {
+        if (position.isClosed) {
           counts.closed += 1;
         } else {
           counts.open += 1;
@@ -101,7 +110,7 @@ export function useFilteredPositions(
     );
 
     const filteredRows = searchedRows.filter((position) => {
-      const closed = isClosedPosition(position.netQuantity);
+      const closed = position.isClosed;
 
       if (filter === "open" && closed) {
         return false;

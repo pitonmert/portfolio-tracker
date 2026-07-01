@@ -77,6 +77,16 @@ bld/
 TestResult.xml
 nunit-*.xml
 test/
+!PortfolioTracker.Frontend/src/test/
+!PortfolioTracker.Frontend/src/test/**
+
+## Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
 
 ## Publish profilleri
 *.publishsettings
@@ -105,3 +115,5 @@ docker-compose.override.yml
 *.jfm
 .claude/
 notes.txt
+
+/db-backups/

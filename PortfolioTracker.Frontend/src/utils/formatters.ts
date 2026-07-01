@@ -1,4 +1,4 @@
-import type { TransactionType } from "../types/transaction";
+import type { TransactionType } from "@/types/transaction";
 
 export function formatTL(amount: number, type?: TransactionType): string {
   const abs = Math.abs(amount).toLocaleString("tr-TR", {
@@ -32,4 +32,16 @@ export function formatDate(dateStr: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+export function getPnlClassHeader(value: number): string {
+  if (value > 0) return "text-xs font-medium text-[var(--income)]";
+  if (value < 0) return "text-xs font-medium text-[var(--expense)]";
+  return "text-xs font-medium text-[var(--ink-3)]";
+}
+
+export function getPnlClassCard(value: number): string {
+  if (value > 0) return "text-sm font-medium text-[var(--income)]";
+  if (value < 0) return "text-sm font-medium text-[var(--expense)]";
+  return "text-sm font-medium text-[var(--ink-3)]";
 }

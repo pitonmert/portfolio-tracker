@@ -1,10 +1,10 @@
-import { api } from "../api/httpClient";
+import { api } from "@/api/httpClient";
 import type {
   Transaction,
   CreateTransactionDto,
   UpdateTransactionDto,
   TransactionQuery,
-} from "../types/transaction";
+} from "@/types/transaction";
 
 function toQueryString(params?: TransactionQuery) {
   const query = new URLSearchParams();

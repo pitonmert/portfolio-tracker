@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
-using PortfolioTracker.API.Contracts;
-using PortfolioTracker.API.Entities;
+using Microsoft.Extensions.DependencyInjection;
+using PortfolioTracker.API.Domain.Entities;
+using PortfolioTracker.API.Features.Transactions;
+using PortfolioTracker.API.Infrastructure.Persistence;
 
 namespace PortfolioTracker.API.IntegrationTests;
 
 public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFactory>
 {
+    private readonly CustomWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     private static readonly System.Text.Json.JsonSerializerOptions _jsonOptions = new()
@@ -17,6 +20,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
 
     public TransactionsControllerTests(CustomWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -37,7 +41,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         var response = await _client.GetAsync($"/api/transactions?type=Sell&search={prefix}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var transactions = await response.Content.ReadFromJsonAsync<List<Transaction>>(
+        var transactions = await response.Content.ReadFromJsonAsync<List<TransactionResponse>>(
             _jsonOptions
         );
         Assert.NotNull(transactions);
@@ -55,7 +59,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         var response = await _client.GetAsync($"/api/transactions?search={prefix}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var transactions = await response.Content.ReadFromJsonAsync<List<Transaction>>(
+        var transactions = await response.Content.ReadFromJsonAsync<List<TransactionResponse>>(
             _jsonOptions
         );
         Assert.NotNull(transactions);
@@ -88,7 +92,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         var response = await _client.GetAsync($"/api/transactions?symbol={query}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var transactions = await response.Content.ReadFromJsonAsync<List<Transaction>>(
+        var transactions = await response.Content.ReadFromJsonAsync<List<TransactionResponse>>(
             _jsonOptions
         );
         var transaction = Assert.Single(transactions!);
@@ -108,7 +112,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         var response = await _client.GetAsync($"/api/transactions?search={prefix}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var transactions = await response.Content.ReadFromJsonAsync<List<Transaction>>(
+        var transactions = await response.Content.ReadFromJsonAsync<List<TransactionResponse>>(
             _jsonOptions
         );
         Assert.NotNull(transactions);
@@ -121,6 +125,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     public async Task Create_WithValidData_ReturnsCreated()
     {
         var dto = new CreateTransactionRequest(
+            null,
             "GARAN",
             10m,
             100m,
@@ -135,9 +140,47 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
+    public async Task Create_QueuesPortfolioPositionSnapshot()
+    {
+        var symbol = $"SNAP{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var dto = new CreateTransactionRequest(
+            null,
+            symbol,
+            10m,
+            25m,
+            null,
+            TransactionType.Buy,
+            DateTime.UtcNow
+        );
+
+        var response = await _client.PostAsJsonAsync("/api/transactions", dto);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var transaction = await response.Content.ReadFromJsonAsync<TransactionResponse>(
+            _jsonOptions
+        );
+        Assert.NotNull(transaction);
+
+        var snapshot = await WaitForSnapshotAsync(
+            transaction!.AssetId,
+            snapshot => snapshot.NetQuantity == 10m && snapshot.ActivePositionCost == 250m
+        );
+        Assert.Equal(symbol, snapshot.Symbol);
+        Assert.False(snapshot.IsClosed);
+    }
+
+    [Fact]
     public async Task Create_WithNegativeQuantity_ReturnsBadRequest()
     {
-        var dto = new CreateTransactionRequest("XAU", -1m, 100m, null, TransactionType.Buy, null);
+        var dto = new CreateTransactionRequest(
+            null,
+            "XAU",
+            -1m,
+            100m,
+            null,
+            TransactionType.Buy,
+            null
+        );
 
         var response = await _client.PostAsJsonAsync("/api/transactions", dto);
 
@@ -147,7 +190,15 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     [Fact]
     public async Task Create_WithNegativeUnitPrice_ReturnsBadRequest()
     {
-        var dto = new CreateTransactionRequest("XAG", 5m, -50m, null, TransactionType.Buy, null);
+        var dto = new CreateTransactionRequest(
+            null,
+            "XAG",
+            5m,
+            -50m,
+            null,
+            TransactionType.Buy,
+            null
+        );
 
         var response = await _client.PostAsJsonAsync("/api/transactions", dto);
 
@@ -177,6 +228,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         var transaction = await CreateTransactionAsync();
         var dto = new UpdateTransactionRequest(
             transaction!.Id,
+            null,
             "ALTIN",
             2m,
             200m,
@@ -207,7 +259,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private async Task<Transaction?> CreateTransactionAsync(
+    private async Task<TransactionResponse?> CreateTransactionAsync(
         string symbol = "GUMUS",
         decimal quantity = 3m,
         decimal unitPrice = 150m,
@@ -217,6 +269,7 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     )
     {
         var dto = new CreateTransactionRequest(
+            null,
             symbol,
             quantity,
             unitPrice,
@@ -225,6 +278,27 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
             transactionDate
         );
         var response = await _client.PostAsJsonAsync("/api/transactions", dto);
-        return await response.Content.ReadFromJsonAsync<Transaction>(_jsonOptions);
+        return await response.Content.ReadFromJsonAsync<TransactionResponse>(_jsonOptions);
+    }
+
+    private async Task<PortfolioPositionSnapshot> WaitForSnapshotAsync(
+        int assetId,
+        Func<PortfolioPositionSnapshot, bool> predicate
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var snapshot = await db.PortfolioPositions.FindAsync(assetId);
+            if (snapshot is not null && predicate(snapshot))
+                return snapshot;
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"Timed out waiting for portfolio snapshot: {assetId}");
     }
 }

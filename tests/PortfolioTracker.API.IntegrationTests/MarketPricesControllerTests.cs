@@ -1,9 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
-using PortfolioTracker.API.Contracts;
-using PortfolioTracker.API.Entities;
-using PortfolioTracker.API.Features.MarketPrices;
 using Microsoft.Extensions.DependencyInjection;
+using PortfolioTracker.API.Domain.Entities;
+using PortfolioTracker.API.Features.MarketPrices;
+using PortfolioTracker.API.Features.Transactions;
+using PortfolioTracker.API.Infrastructure.Persistence;
 
 namespace PortfolioTracker.API.IntegrationTests;
 
@@ -56,7 +57,7 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
     public async Task SaveManualPrice_WritesManualPriceToDatabase()
     {
         var symbol = $"MAN{Guid.NewGuid():N}";
-        await CreateTransactionAsync(symbol);
+        var transaction = await CreateTransactionAsync(symbol);
 
         var response = await _client.PutAsJsonAsync(
             $"/api/market-prices/{symbol}/manual",
@@ -76,6 +77,53 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.True(quote.IsAvailable);
         Assert.True(quote.IsManual);
         Assert.Equal(321.98m, quote.CurrentPrice);
+
+        var snapshot = await WaitForSnapshotAsync(
+            transaction.AssetId,
+            snapshot => snapshot.CurrentPrice == 321.98m
+        );
+        Assert.Equal(321.98m, snapshot.MarketValue);
+        Assert.Equal(221.98m, snapshot.UnrealizedPnL);
+    }
+
+    [Fact]
+    public async Task SaveManualPrice_UsesCatalogNameWhenAvailable()
+    {
+        var symbol = $"CAT{Guid.NewGuid():N}".ToUpperInvariant();
+        var catalogName = $"{symbol} Catalog Name";
+        await CreateTransactionAsync(symbol);
+        await CreateAssetAsync(symbol, catalogName);
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/market-prices/{symbol}/manual",
+            new ManualMarketPriceRequest(111.22m)
+        );
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var quote = await response.Content.ReadFromJsonAsync<MarketPriceQuote>(_jsonOptions);
+        Assert.NotNull(quote);
+        Assert.Equal(catalogName, quote!.CompanyName);
+    }
+
+    [Fact]
+    public async Task ClearManualPrice_KeepsCatalogNameWhenAvailable()
+    {
+        var symbol = $"CCL{Guid.NewGuid():N}".ToUpperInvariant();
+        var catalogName = $"{symbol} Catalog Name";
+        await CreateTransactionAsync(symbol);
+        await CreateAssetAsync(symbol, catalogName);
+        await _client.PutAsJsonAsync(
+            $"/api/market-prices/{symbol}/manual",
+            new ManualMarketPriceRequest(222.33m)
+        );
+
+        var response = await _client.DeleteAsync($"/api/market-prices/{symbol}/manual");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var quote = await response.Content.ReadFromJsonAsync<MarketPriceQuote>(_jsonOptions);
+        Assert.NotNull(quote);
+        Assert.Equal(catalogName, quote!.CompanyName);
+        Assert.False(quote.IsAvailable);
     }
 
     [Fact]
@@ -146,11 +194,17 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
     {
         var symbol = $"CRT{Guid.NewGuid():N}";
 
-        await CreateTransactionAsync(symbol);
+        var transaction = await CreateTransactionAsync(symbol);
 
         var quote = await WaitForQuoteAsync(symbol, quote => quote.IsAvailable);
         Assert.False(quote.IsManual);
         Assert.Equal(123.45m, quote.CurrentPrice);
+
+        var snapshot = await WaitForSnapshotAsync(
+            transaction.AssetId,
+            snapshot => snapshot.CurrentPrice == 123.45m
+        );
+        Assert.Equal(123.45m, snapshot.MarketValue);
     }
 
     [Fact]
@@ -163,6 +217,7 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
 
         var update = new UpdateTransactionRequest(
             transaction.Id,
+            null,
             newSymbol,
             1m,
             100m,
@@ -200,9 +255,10 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.Null(quote.CurrentPrice);
     }
 
-    private async Task<Transaction> CreateTransactionAsync(string symbol)
+    private async Task<TransactionResponse> CreateTransactionAsync(string symbol)
     {
         var request = new CreateTransactionRequest(
+            null,
             symbol,
             1m,
             100m,
@@ -214,9 +270,32 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
         var response = await _client.PostAsJsonAsync("/api/transactions", request);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var transaction = await response.Content.ReadFromJsonAsync<Transaction>(_jsonOptions);
+        var transaction = await response.Content.ReadFromJsonAsync<TransactionResponse>(
+            _jsonOptions
+        );
         Assert.NotNull(transaction);
         return transaction!;
+    }
+
+    private async Task CreateAssetAsync(string symbol, string name)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Assets.Add(
+            new Asset
+            {
+                Symbol = symbol,
+                Name = name,
+                AssetType = "stock",
+                Market = "BIST",
+                Currency = "TRY",
+                ProviderSymbol = symbol,
+                Source = "test",
+                IsActive = true,
+                LastSyncedAt = DateTime.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync();
     }
 
     private async Task<MarketPriceQuote> GetQuoteAsync(string symbol)
@@ -246,5 +325,26 @@ public class MarketPricesControllerTests : IClassFixture<CustomWebApplicationFac
         }
 
         throw new TimeoutException($"Timed out waiting for market price quote: {symbol}");
+    }
+
+    private async Task<PortfolioPositionSnapshot> WaitForSnapshotAsync(
+        int assetId,
+        Func<PortfolioPositionSnapshot, bool> predicate
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var snapshot = await db.PortfolioPositions.FindAsync(assetId);
+            if (snapshot is not null && predicate(snapshot))
+                return snapshot;
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"Timed out waiting for portfolio snapshot: {assetId}");
     }
 }

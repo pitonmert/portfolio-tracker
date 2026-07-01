@@ -2,6 +2,7 @@ export type TransactionType = "Buy" | "Sell";
 
 export interface Transaction {
   id: number;
+  assetId: number;
   symbol: string;
   quantity: number;
   unitPrice: number;
@@ -12,6 +13,7 @@ export interface Transaction {
 }
 
 export interface CreateTransactionDto {
+  assetId?: number | null;
   symbol: string;
   quantity: number;
   unitPrice: number;

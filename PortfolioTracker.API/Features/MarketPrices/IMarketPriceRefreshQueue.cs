@@ -10,4 +10,3 @@ public interface IMarketPriceRefreshQueue
 
     bool IsQueuedOrProcessing(string symbol);
 }
-

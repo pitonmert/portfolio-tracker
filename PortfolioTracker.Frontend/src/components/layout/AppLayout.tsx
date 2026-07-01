@@ -1,11 +1,11 @@
 import { Outlet } from "react-router-dom";
-import { useTheme } from "../../context/ThemeContext";
-import { useToast } from "../../context/ToastContext";
+import { useTheme } from "@/context/ThemeContext";
+import { useToast } from "@/context/ToastContext";
 
 const iconButtonClass =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-[var(--nav-ink)] transition-colors hover:bg-[var(--nav-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nav-ink)] select-none";
 const brandLinkClass =
-  "block min-w-max whitespace-nowrap font-[family-name:var(--font-display)] text-lg font-bold leading-none text-[var(--nav-ink)] transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nav-ink)] max-[600px]:text-base max-[360px]:text-sm select-none";
+  "block min-w-max whitespace-nowrap font-[family-name:var(--font-display)] text-lg font-bold leading-snug text-[var(--nav-ink)] transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--nav-ink)] max-[600px]:text-base max-[360px]:text-sm select-none";
 
 export default function AppLayout() {
   const { theme, toggleTheme } = useTheme();
@@ -41,7 +41,7 @@ export default function AppLayout() {
               >
                 {activeToast.type === "error" ? "!" : "✓"}
               </span>
-              <span className="truncate font-[family-name:var(--font-mono)] text-[11px] font-bold uppercase tracking-wider mt-[1px]">
+              <span className="mt-[1px] truncate font-[family-name:var(--font-mono)] text-xs font-semibold uppercase">
                 {activeToast.message}
               </span>
             </div>

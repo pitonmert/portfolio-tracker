@@ -1,5 +1,5 @@
-import { api } from "../api/httpClient";
-import type { MarketPriceQuote } from "../types/marketPrice";
+import { api } from "@/api/httpClient";
+import type { MarketPriceQuote } from "@/types/marketPrice";
 
 function toQueryString(symbols: string[]) {
   const query = new URLSearchParams();

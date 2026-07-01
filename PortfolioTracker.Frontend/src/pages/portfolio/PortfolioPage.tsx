@@ -1,29 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { marketPriceService } from "../../services/marketPriceService";
-import { portfolioService } from "../../services/portfolioService";
-import { useAsync } from "../../hooks/useAsync";
+import { portfolioService } from "@/services/portfolioService";
+import { queryKeys } from "@/services/queryKeys";
 import { useFilteredPositions } from "./hooks/useFilteredPositions";
 
-import AssetHistoryModal from "./components/AssetHistoryModal";
+import PositionHistoryModal from "./components/PositionHistoryModal";
 import TransactionHistoryModal from "./components/transactions/TransactionHistoryModal";
 import TransactionFormModal from "./components/transactions/TransactionFormModal";
 import { PositionList } from "./components/PositionList";
-import { FilterBar } from "./components/FilterBar";
 import { PortfolioSummaryPanel } from "./components/PortfolioSummaryPanel";
-import type { FilterType, SortType } from "./components/FilterBar";
-import {
-  getMarketPriceKey,
-  type MarketPriceMap,
-} from "./utils/portfolioCalculations";
-import { isClosedPosition } from "./utils/helpers";
+import { PortfolioToolbar } from "./components/PortfolioToolbar";
+import type { FilterType, SortType } from "./portfolioControls";
+import { getMarketPriceKey } from "./utils/portfolioUiUtils";
 
 const DEFAULT_FILTER: FilterType = "open";
 const DEFAULT_SORT: SortType = "symbol_asc";
 const CONTROLS_STORAGE_KEY = "portfolioTracker.portfolio.controls";
 const SESSION_STORAGE_KEY = "portfolioTracker.portfolio.session";
 const OLD_CASH_BALANCE_STORAGE_KEY = "portfolioTracker.portfolio.cashBalance";
+const READ_MODEL_REFRESH_DELAY_MS = 1500;
 
 interface PortfolioControls {
   filter: FilterType;
@@ -160,7 +157,8 @@ function setOptionalParam(
 }
 
 const styles = {
-  pageContainer: "flex h-full w-full flex-col min-w-0 overflow-hidden",
+  pageContainer:
+    "flex h-full w-full flex-col min-w-0 overflow-hidden select-none",
   contentWrapper: "flex h-full w-full flex-col min-w-0",
   panel: "flex h-full w-full flex-col min-w-0",
   listScrollContainer:
@@ -170,7 +168,13 @@ const styles = {
   listInnerContainer: "w-full max-w-[640px] min-w-0 pb-3",
 };
 
+function getErrorMessage(error: unknown): string | null {
+  if (!error) return null;
+  return error instanceof Error ? error.message : "Bir hata oluştu";
+}
+
 export default function PortfolioPage() {
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialControlsRef = useRef<PortfolioControls | null>(null);
   const initialSessionRef = useRef<Partial<PortfolioSession> | null>(null);
@@ -191,8 +195,6 @@ export default function PortfolioPage() {
   );
   const [isAllTransactionsOpen, setIsAllTransactionsOpen] = useState(false);
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [cashBalanceValue, setCashBalanceValue] = useState(0);
 
   const [filter, setFilter] = useState<FilterType>(initialControls.filter);
   const [sort, setSort] = useState<SortType>(initialControls.sort);
@@ -202,50 +204,33 @@ export default function PortfolioPage() {
   const didMountControlsRef = useRef(false);
 
   const {
-    data: positions,
-    loading: positionsLoading,
-    error: positionsError,
-  } = useAsync(() => portfolioService.getPositions(), [refreshKey]);
+    data: dashboard,
+    isLoading: dashboardLoading,
+    isFetching: dashboardFetching,
+    error: dashboardQueryError,
+  } = useQuery({
+    queryKey: queryKeys.portfolio.dashboard(),
+    queryFn: portfolioService.getDashboard,
+  });
+  const positions = dashboard?.positions;
+  const summary = dashboard?.summary;
 
-  const {
-    data: cashBalance,
-    loading: cashBalanceLoading,
-    error: cashBalanceError,
-    refetch: refetchCashBalance,
-  } = useAsync(() => portfolioService.getCashBalance(), []);
-
-  const activeSymbols = useMemo(
-    () =>
-      (positions ?? [])
-        .filter((position) => !isClosedPosition(position.netQuantity))
-        .map((position) => position.symbol),
-    [positions],
-  );
-  const activeSymbolsKey = activeSymbols.map(getMarketPriceKey).join(",");
-
-  const {
-    data: marketPriceRows,
-    loading: marketPricesLoading,
-    refetch: refetchMarketPrices,
-  } = useAsync(
-    () => marketPriceService.getQuotes(activeSymbols),
-    [activeSymbolsKey, refreshKey],
-  );
-
-  const marketPrices = useMemo<MarketPriceMap>(() => {
-    const prices: MarketPriceMap = {};
-
-    for (const quote of marketPriceRows ?? []) {
-      prices[getMarketPriceKey(quote.symbol)] = quote;
-    }
-
-    return prices;
-  }, [marketPriceRows]);
+  const { mutateAsync: updateCashBalance } = useMutation({
+    mutationFn: portfolioService.updateCashBalance,
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.portfolio.cashBalance(), updated);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolio.dashboard(),
+      });
+    },
+  });
 
   const hasRefreshingMarketPrices = useMemo(
-    () => (marketPriceRows ?? []).some((quote) => quote.isRefreshing),
-    [marketPriceRows],
+    () =>
+      (positions ?? []).some((position) => position.marketPrice?.isRefreshing),
+    [positions],
   );
+  const dashboardError = getErrorMessage(dashboardQueryError);
 
   const { filteredRows, filterCounts, hasRows, hasVisibleRows, count } =
     useFilteredPositions(positions, filter, search, sort);
@@ -259,22 +244,18 @@ export default function PortfolioPage() {
   }, []);
 
   useEffect(() => {
-    if (cashBalance) {
-      setCashBalanceValue(cashBalance.cashBalance);
-    }
-  }, [cashBalance]);
-
-  useEffect(() => {
-    if (!hasRefreshingMarketPrices || marketPricesLoading) {
+    if (!hasRefreshingMarketPrices || dashboardFetching) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      refetchMarketPrices();
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolio.dashboard(),
+      });
     }, 2000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasRefreshingMarketPrices, marketPricesLoading, refetchMarketPrices]);
+  }, [dashboardFetching, hasRefreshingMarketPrices, queryClient]);
 
   useEffect(() => {
     saveControls({ filter, sort, search });
@@ -294,7 +275,7 @@ export default function PortfolioPage() {
   }, [selectedSymbol]);
 
   useEffect(() => {
-    if (positionsLoading || !selectedSymbol || !positions) {
+    if (dashboardLoading || !selectedSymbol || !positions) {
       return;
     }
 
@@ -306,7 +287,7 @@ export default function PortfolioPage() {
     if (!existsInBackendPositions) {
       setSelectedSymbol(null);
     }
-  }, [positions, positionsLoading, selectedSymbol]);
+  }, [dashboardLoading, positions, selectedSymbol]);
 
   useEffect(() => {
     if (!didMountControlsRef.current) {
@@ -319,7 +300,7 @@ export default function PortfolioPage() {
   }, [filter, sort, search]);
 
   useEffect(() => {
-    if (positionsLoading || didRestoreScrollRef.current || !listRef.current) {
+    if (dashboardLoading || didRestoreScrollRef.current || !listRef.current) {
       return;
     }
 
@@ -329,30 +310,56 @@ export default function PortfolioPage() {
     window.requestAnimationFrame(() => {
       listRef.current?.scrollTo({ top: scrollTop });
     });
-  }, [filteredRows.length, initialSession.scrollTop, positionsLoading]);
+  }, [dashboardLoading, filteredRows.length, initialSession.scrollTop]);
 
   const handleListScroll = useCallback(() => {
     saveSession({ scrollTop: listRef.current?.scrollTop ?? 0 });
   }, []);
 
-  const handleTransactionsChanged = () => {
-    setRefreshKey((prev) => prev + 1);
-  };
+  const invalidatePortfolioReadModel = useCallback(() => {
+    const invalidate = () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolio.dashboard(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolio.positions(),
+      });
+    };
+
+    invalidate();
+    window.setTimeout(invalidate, READ_MODEL_REFRESH_DELAY_MS);
+  }, [queryClient]);
+
+  const handleTransactionsChanged = useCallback(() => {
+    invalidatePortfolioReadModel();
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.transactions.all,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.marketPrices.all,
+    });
+  }, [invalidatePortfolioReadModel, queryClient]);
+
+  const handleMarketPriceChanged = useCallback(() => {
+    invalidatePortfolioReadModel();
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.marketPrices.all,
+    });
+  }, [invalidatePortfolioReadModel, queryClient]);
 
   const handleCashBalanceSave = useCallback(
     async (nextCashBalance: number) => {
-      const updated = await portfolioService.updateCashBalance(nextCashBalance);
-      setCashBalanceValue(updated.cashBalance);
-      refetchCashBalance();
+      const updated = await updateCashBalance(nextCashBalance);
       return updated.cashBalance;
     },
-    [refetchCashBalance],
+    [updateCashBalance],
   );
 
   const selectedPosition = selectedSymbol
     ? positions?.find(
         (position) =>
-          getMarketPriceKey(position.symbol) === getMarketPriceKey(selectedSymbol),
+          getMarketPriceKey(position.symbol) ===
+          getMarketPriceKey(selectedSymbol),
       )
     : undefined;
 
@@ -361,15 +368,13 @@ export default function PortfolioPage() {
       <div className={styles.contentWrapper}>
         <section className={styles.panel}>
           <PortfolioSummaryPanel
-            positions={positions}
-            marketPrices={marketPrices}
-            cashBalance={cashBalanceValue}
-            cashBalanceLoading={cashBalanceLoading}
-            cashBalanceError={cashBalanceError}
+            summary={summary}
+            cashBalanceLoading={dashboardLoading}
+            cashBalanceError={dashboardError}
             onCashBalanceSave={handleCashBalanceSave}
           />
 
-          <FilterBar
+          <PortfolioToolbar
             filter={filter}
             onFilterChange={setFilter}
             filterCounts={filterCounts}
@@ -390,14 +395,13 @@ export default function PortfolioPage() {
             <div className={styles.listCenterContainer}>
               <div className={styles.listInnerContainer}>
                 <PositionList
-                  loading={positionsLoading}
-                  error={positionsError}
+                  loading={dashboardLoading}
+                  error={dashboardError}
                   hasRows={hasRows}
                   hasVisibleRows={hasVisibleRows}
                   filteredRows={filteredRows}
-                  marketPrices={marketPrices}
-                  marketPricesLoading={marketPricesLoading}
-                  onMarketPriceChanged={refetchMarketPrices}
+                  marketPricesLoading={dashboardLoading}
+                  onMarketPriceChanged={handleMarketPriceChanged}
                   onSelectAsset={setSelectedSymbol}
                 />
               </div>
@@ -407,12 +411,12 @@ export default function PortfolioPage() {
       </div>
 
       {selectedSymbol && selectedPosition && (
-        <AssetHistoryModal
+        <PositionHistoryModal
           symbol={selectedPosition.symbol}
           position={selectedPosition}
-          marketPrice={marketPrices[getMarketPriceKey(selectedPosition.symbol)]}
-          marketPriceLoading={marketPricesLoading}
-          onMarketPriceChanged={refetchMarketPrices}
+          marketPrice={selectedPosition.marketPrice}
+          marketPriceLoading={dashboardLoading}
+          onMarketPriceChanged={handleMarketPriceChanged}
           onClose={() => setSelectedSymbol(null)}
           onChanged={handleTransactionsChanged}
         />

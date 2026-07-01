@@ -1,10 +1,11 @@
 using System.Text.Json.Serialization;
-using PortfolioTracker.API.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using PortfolioTracker.API.Features.Assets;
 using PortfolioTracker.API.Features.MarketPrices;
 using PortfolioTracker.API.Features.Portfolio;
 using PortfolioTracker.API.Features.Transactions;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using PortfolioTracker.API.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,20 +37,44 @@ builder.Services.Configure<MarketDataServiceOptions>(
 builder.Services.AddHttpClient<IMarketPriceProvider, MarketDataServicePriceProvider>(
     (serviceProvider, client) =>
     {
-        var options = serviceProvider.GetRequiredService<IOptions<MarketDataServiceOptions>>()
+        var options = serviceProvider
+            .GetRequiredService<IOptions<MarketDataServiceOptions>>()
+            .Value;
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.RequestTimeoutSeconds));
+    }
+);
+builder.Services.AddHttpClient<IAssetCatalogProvider, MarketDataServiceAssetCatalogProvider>(
+    (serviceProvider, client) =>
+    {
+        var options = serviceProvider
+            .GetRequiredService<IOptions<MarketDataServiceOptions>>()
             .Value;
         client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
         client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.RequestTimeoutSeconds));
     }
 );
 builder.Services.AddSingleton<IMarketPriceRefreshQueue, MarketPriceRefreshQueue>();
+builder.Services.AddSingleton<
+    IPortfolioPositionRecalculationQueue,
+    PortfolioPositionRecalculationQueue
+>();
 
 // Register service via interface so dependents are decoupled from the implementation.
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IPortfolioService, PortfolioService>();
+builder.Services.AddScoped<
+    IPortfolioPositionRecalculationService,
+    PortfolioPositionRecalculationService
+>();
 builder.Services.AddScoped<IMarketPriceService, MarketPriceService>();
+builder.Services.AddScoped<IAssetSyncService, AssetSyncService>();
+builder.Services.AddScoped<IAssetSearchService, AssetSearchService>();
+builder.Services.AddHostedService<AssetCatalogStartupSyncService>();
+builder.Services.AddHostedService<PortfolioPositionStartupSyncService>();
 builder.Services.AddHostedService<MarketPriceRefreshWorker>();
 builder.Services.AddHostedService<QueuedMarketPriceRefreshWorker>();
+builder.Services.AddHostedService<PortfolioPositionRecalculationWorker>();
 
 var app = builder.Build();
 
@@ -72,6 +97,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Convenience redirect so navigating to the root opens Swagger UI.
 app.MapGet("/", () => Results.Redirect("/swagger/index.html"));

@@ -1,18 +1,11 @@
-import type { Transaction } from "../../../../types/transaction";
-import {
-  formatDate,
-  formatTL,
-  formatNumber,
-} from "../../../../utils/formatters";
+import type { Transaction } from "@/types/transaction";
+import { formatDate, formatTL, formatNumber } from "@/utils/formatters";
+import { cx } from "@/utils/cx";
 
 interface TransactionCardProps {
   transaction: Transaction;
   onClick?: () => void;
   hideSymbol?: boolean;
-}
-
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
 }
 
 const styles = {
@@ -23,23 +16,23 @@ const styles = {
 
   leftCol: "flex min-w-0 flex-1 flex-col justify-between self-stretch",
   titleRow: "flex min-w-0 items-baseline gap-1.5",
-  symbolBase: "truncate font-mono text-[17px] font-semibold leading-tight",
+  symbolBase: "truncate font-mono text-base font-semibold leading-snug",
   symbolDefault: "text-[var(--ink)]",
-  typeBadgeBase: "shrink-0 font-sans text-[12px] font-medium leading-none",
+  typeBadgeBase: "shrink-0 font-sans text-xs font-medium leading-snug",
   typeDot:
-    "shrink-0 font-sans text-[12px] font-medium leading-none text-[var(--ink-3)]",
+    "shrink-0 font-sans text-xs font-medium leading-snug text-[var(--ink-3)]",
 
   infoRow:
-    "flex items-center gap-1.5 truncate font-sans text-[12px] font-medium leading-none text-[var(--ink-3)]",
+    "flex items-center gap-1.5 truncate font-sans text-xs font-medium leading-snug text-[var(--ink-3)]",
   infoDate: "shrink-0",
   infoDot: "shrink-0",
   infoNote: "truncate",
 
   rightCol:
     "flex shrink-0 flex-col items-end justify-between self-stretch text-right",
-  amountBase: "font-mono text-[17px] font-semibold leading-tight tabular-nums",
+  amountBase: "font-mono text-base font-semibold leading-snug tabular-nums",
   unitPrice:
-    "font-mono text-[13px] font-medium leading-tight tabular-nums text-[var(--ink-3)]",
+    "font-mono text-[13px] font-medium leading-snug tabular-nums text-[var(--ink-3)]",
 
   incomeBorder: "border-l-[color:var(--income)]",
   expenseBorder: "border-l-[color:var(--expense)]",

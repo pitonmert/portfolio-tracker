@@ -1,10 +1,11 @@
-using PortfolioTracker.API.Data;
-using PortfolioTracker.API.Features.MarketPrices;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PortfolioTracker.API.Features.Assets;
+using PortfolioTracker.API.Features.MarketPrices;
+using PortfolioTracker.API.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 
 namespace PortfolioTracker.API.IntegrationTests;
@@ -17,6 +18,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("Assets:StartupSync", "false");
+        builder.UseSetting("PortfolioPositions:StartupSync", "false");
+
         builder.ConfigureServices(services =>
         {
             var descriptor = services.SingleOrDefault(d =>
@@ -31,6 +35,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
             services.RemoveAll<IMarketPriceProvider>();
             services.AddSingleton<IMarketPriceProvider, FakeMarketPriceProvider>();
+            services.RemoveAll<IAssetCatalogProvider>();
+            services.AddSingleton<IAssetCatalogProvider, FakeAssetCatalogProvider>();
         });
     }
 
@@ -73,6 +79,52 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                     IsManual = false,
                 }
             );
+        }
+    }
+
+    private sealed class FakeAssetCatalogProvider : IAssetCatalogProvider
+    {
+        public Task<IReadOnlyList<AssetCatalogItem>> GetStockAssetsAsync(
+            CancellationToken cancellationToken = default
+        ) =>
+            Task.FromResult<IReadOnlyList<AssetCatalogItem>>([
+                new AssetCatalogItem(
+                    "THYAO",
+                    "Türk Hava Yolları",
+                    "stock",
+                    "BIST",
+                    "TRY",
+                    "THYAO",
+                    "test",
+                    null,
+                    "screen_stocks"
+                ),
+            ]);
+
+        public Task<IReadOnlyList<AssetCatalogItem>> GetFundAssetsAsync(
+            string fundType,
+            CancellationToken cancellationToken = default
+        )
+        {
+            IReadOnlyList<AssetCatalogItem> result =
+                fundType == "YAT"
+                    ?
+                    [
+                        new AssetCatalogItem(
+                            "KPA",
+                            "Kuveyt Türk Portföy Katılım Hisse Senedi Fonu",
+                            "fund",
+                            "TEFAS",
+                            "TRY",
+                            "KPA",
+                            "test",
+                            "YAT",
+                            "Hisse Senedi Şemsiye Fonu"
+                        ),
+                    ]
+                    : [];
+
+            return Task.FromResult(result);
         }
     }
 }

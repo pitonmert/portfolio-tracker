@@ -1,5 +1,4 @@
-using PortfolioTracker.API.Contracts;
-using PortfolioTracker.API.Entities;
+using PortfolioTracker.API.Features.Transactions;
 
 namespace PortfolioTracker.API.Features.Transactions;
 
@@ -10,13 +9,13 @@ namespace PortfolioTracker.API.Features.Transactions;
 public interface ITransactionService
 {
     /// <summary>Returns all transactions that match the given filter criteria, sorted by date descending.</summary>
-    Task<IEnumerable<Transaction>> GetAllAsync(TransactionQuery query);
+    Task<IEnumerable<TransactionResponse>> GetAllAsync(TransactionQuery query);
 
     /// <summary>Returns the transaction with the specified <paramref name="id"/>, or <c>null</c> if not found.</summary>
-    Task<Transaction?> GetByIdAsync(int id);
+    Task<TransactionResponse?> GetByIdAsync(int id);
 
     /// <summary>Creates a new transaction from the provided request and persists it to the database.</summary>
-    Task<Transaction> CreateAsync(CreateTransactionRequest request);
+    Task<TransactionResponse> CreateAsync(CreateTransactionRequest request);
 
     /// <summary>
     /// Updates the transaction identified by <paramref name="id"/> with the values from <paramref name="request"/>.

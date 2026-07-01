@@ -1,65 +1,57 @@
-using PortfolioTracker.API.Data;
-using PortfolioTracker.API.Entities;
-using PortfolioTracker.API.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using PortfolioTracker.API.Features.Portfolio;
 
 namespace PortfolioTracker.API.Features.Portfolio;
 
 [ApiController]
 [Route("api/[controller]")]
-public class PortfolioController(IPortfolioService portfolioService, ApplicationDbContext context)
-    : ControllerBase
+public class PortfolioController(IPortfolioService portfolioService) : ControllerBase
 {
     [HttpGet("positions")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<PortfolioPosition>>> GetPositions()
+    public async Task<ActionResult<IEnumerable<PortfolioPosition>>> GetPositions(
+        CancellationToken cancellationToken
+    )
     {
-        var positions = await portfolioService.GetPositionsAsync();
+        var positions = await portfolioService.GetPositionsAsync(cancellationToken);
         return Ok(positions);
+    }
+
+    [HttpGet("dashboard")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<PortfolioDashboardResponse>> GetDashboard(
+        CancellationToken cancellationToken
+    )
+    {
+        var dashboard = await portfolioService.GetDashboardAsync(cancellationToken);
+        return Ok(dashboard);
     }
 
     [HttpGet("cash-balance")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<PortfolioCashBalanceResponse>> GetCashBalance()
+    public async Task<ActionResult<PortfolioCashBalanceResponse>> GetCashBalance(
+        CancellationToken cancellationToken
+    )
     {
-        var settings = await GetSettingsAsync();
-        return Ok(ToCashBalanceResponse(settings));
+        var cashBalance = await portfolioService.GetCashBalanceAsync(cancellationToken);
+        return Ok(cashBalance);
     }
 
     [HttpPut("cash-balance")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PortfolioCashBalanceResponse>> UpdateCashBalance(
-        UpdatePortfolioCashBalanceRequest request
+        UpdatePortfolioCashBalanceRequest request,
+        CancellationToken cancellationToken
     )
     {
         if (request.CashBalance < 0)
             return BadRequest("Bakiye negatif olamaz.");
 
-        var settings = await GetSettingsAsync();
-        settings.CashBalance = request.CashBalance;
-        settings.UpdatedAt = DateTime.UtcNow;
-
-        await context.SaveChangesAsync();
-        return Ok(ToCashBalanceResponse(settings));
+        var cashBalance = await portfolioService.UpdateCashBalanceAsync(
+            request.CashBalance,
+            cancellationToken
+        );
+        return Ok(cashBalance);
     }
-
-    private async Task<PortfolioSettings> GetSettingsAsync()
-    {
-        var settings = await context
-            .PortfolioSettings.OrderBy(settings => settings.Id)
-            .FirstOrDefaultAsync();
-        if (settings is not null)
-            return settings;
-
-        settings = new PortfolioSettings { CashBalance = 0m, UpdatedAt = DateTime.UtcNow };
-
-        await context.PortfolioSettings.AddAsync(settings);
-        await context.SaveChangesAsync();
-        return settings;
-    }
-
-    private static PortfolioCashBalanceResponse ToCashBalanceResponse(PortfolioSettings settings) =>
-        new(settings.CashBalance, settings.UpdatedAt);
 }

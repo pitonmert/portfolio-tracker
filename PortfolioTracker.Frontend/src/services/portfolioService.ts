@@ -1,11 +1,14 @@
-import { api } from "../api/httpClient";
+import { api } from "@/api/httpClient";
 import type {
   PortfolioCashBalance,
-  PortfolioPosition,
-} from "../types/portfolio";
+  PortfolioDashboard,
+  PortfolioPositionBase,
+} from "@/types/portfolio";
 
 export const portfolioService = {
-  getPositions: () => api.get<PortfolioPosition[]>("/api/portfolio/positions"),
+  getDashboard: () => api.get<PortfolioDashboard>("/api/portfolio/dashboard"),
+  getPositions: () =>
+    api.get<PortfolioPositionBase[]>("/api/portfolio/positions"),
   getCashBalance: () =>
     api.get<PortfolioCashBalance>("/api/portfolio/cash-balance"),
   updateCashBalance: (cashBalance: number) =>

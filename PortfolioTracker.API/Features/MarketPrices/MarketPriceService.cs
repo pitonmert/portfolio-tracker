@@ -1,15 +1,16 @@
-using PortfolioTracker.API.Data;
-using PortfolioTracker.API.Entities;
-using PortfolioTracker.API.Features.Portfolio;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using PortfolioTracker.API.Domain.Entities;
+using PortfolioTracker.API.Features.Portfolio;
+using PortfolioTracker.API.Infrastructure.Persistence;
 
 namespace PortfolioTracker.API.Features.MarketPrices;
 
 public class MarketPriceService(
     ApplicationDbContext context,
     IMarketPriceProvider provider,
-    IMarketPriceRefreshQueue refreshQueue
+    IMarketPriceRefreshQueue refreshQueue,
+    IPortfolioPositionRecalculationQueue portfolioPositionQueue
 ) : IMarketPriceService
 {
     public async Task<MarketPriceQuote> GetQuoteAsync(
@@ -21,14 +22,22 @@ public class MarketPriceService(
         if (string.IsNullOrWhiteSpace(normalizedSymbol))
             return MarketPriceQuote.Unavailable(normalizedSymbol);
 
+        var asset = await ResolvePreferredAssetAsync(normalizedSymbol, cancellationToken);
+        if (asset is null)
+            return MarketPriceQuote.Unavailable(
+                normalizedSymbol,
+                isRefreshing: refreshQueue.IsQueuedOrProcessing(normalizedSymbol)
+            );
+
         var price = await context
             .MarketPrices.AsNoTracking()
-            .FirstOrDefaultAsync(price => price.Symbol == normalizedSymbol, cancellationToken);
+            .Include(price => price.Asset)
+            .FirstOrDefaultAsync(price => price.AssetId == asset.Id, cancellationToken);
 
-        var isRefreshing = refreshQueue.IsQueuedOrProcessing(normalizedSymbol);
+        var isRefreshing = refreshQueue.IsQueuedOrProcessing(asset.Symbol);
 
         return price is null
-            ? MarketPriceQuote.Unavailable(normalizedSymbol, isRefreshing: isRefreshing)
+            ? MarketPriceQuote.Unavailable(asset.Symbol, isRefreshing: isRefreshing)
             : ToQuote(price, isRefreshing);
     }
 
@@ -46,21 +55,70 @@ public class MarketPriceService(
         if (normalizedSymbols.Count == 0)
             return [];
 
-        var prices = await context
+        var assetsBySymbol = await ResolvePreferredAssetsAsync(
+            normalizedSymbols,
+            cancellationToken
+        );
+        var assetIds = assetsBySymbol.Values.Select(asset => asset.Id).ToList();
+        var pricesByAssetId = await context
             .MarketPrices.AsNoTracking()
-            .Where(price => normalizedSymbols.Contains(price.Symbol))
-            .ToDictionaryAsync(price => price.Symbol, cancellationToken);
+            .Include(price => price.Asset)
+            .Where(price => assetIds.Contains(price.AssetId))
+            .ToDictionaryAsync(price => price.AssetId, cancellationToken);
 
         return normalizedSymbols
             .Select(symbol =>
-                prices.TryGetValue(symbol, out var price)
-                    ? ToQuote(price, refreshQueue.IsQueuedOrProcessing(symbol))
-                    : MarketPriceQuote.Unavailable(
+            {
+                if (!assetsBySymbol.TryGetValue(symbol, out var asset))
+                    return MarketPriceQuote.Unavailable(
                         symbol,
                         isRefreshing: refreshQueue.IsQueuedOrProcessing(symbol)
-                    )
-            )
+                    );
+
+                return pricesByAssetId.TryGetValue(asset.Id, out var price)
+                    ? ToQuote(price, refreshQueue.IsQueuedOrProcessing(asset.Symbol))
+                    : MarketPriceQuote.Unavailable(
+                        asset.Symbol,
+                        isRefreshing: refreshQueue.IsQueuedOrProcessing(asset.Symbol)
+                    );
+            })
             .ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<int, MarketPriceQuote>> GetQuotesByAssetIdsAsync(
+        IEnumerable<int> assetIds,
+        CancellationToken cancellationToken
+    )
+    {
+        var distinctAssetIds = assetIds.Where(assetId => assetId > 0).Distinct().ToList();
+        if (distinctAssetIds.Count == 0)
+            return new Dictionary<int, MarketPriceQuote>();
+
+        var assets = await context
+            .Assets.AsNoTracking()
+            .Where(asset => distinctAssetIds.Contains(asset.Id))
+            .ToDictionaryAsync(asset => asset.Id, cancellationToken);
+        var pricesByAssetId = await context
+            .MarketPrices.AsNoTracking()
+            .Include(price => price.Asset)
+            .Where(price => distinctAssetIds.Contains(price.AssetId))
+            .ToDictionaryAsync(price => price.AssetId, cancellationToken);
+
+        return distinctAssetIds
+            .Where(assets.ContainsKey)
+            .ToDictionary(
+                assetId => assetId,
+                assetId =>
+                {
+                    var asset = assets[assetId];
+                    return pricesByAssetId.TryGetValue(assetId, out var price)
+                        ? ToQuote(price, refreshQueue.IsQueuedOrProcessing(asset.Symbol))
+                        : MarketPriceQuote.Unavailable(
+                            asset.Symbol,
+                            isRefreshing: refreshQueue.IsQueuedOrProcessing(asset.Symbol)
+                        );
+                }
+            );
     }
 
     public async Task<MarketPriceQuote> SaveManualPriceAsync(
@@ -80,11 +138,11 @@ public class MarketPriceService(
             );
 
         var now = DateTime.UtcNow;
+        var asset = await GetOrCreateCustomAssetAsync(normalizedSymbol, cancellationToken);
         var entity = await SaveMarketPriceAsync(
-            normalizedSymbol,
+            asset,
             entity =>
             {
-                entity.CompanyName = null;
                 entity.CurrentPrice = currentPrice;
                 entity.DayHigh = null;
                 entity.DayLow = null;
@@ -99,6 +157,7 @@ public class MarketPriceService(
             cancellationToken
         );
 
+        await portfolioPositionQueue.EnqueueAssetAsync(entity.AssetId, cancellationToken);
         return ToQuote(entity);
     }
 
@@ -111,11 +170,11 @@ public class MarketPriceService(
         if (string.IsNullOrWhiteSpace(normalizedSymbol))
             throw new ArgumentException("Sembol boş olamaz.", nameof(symbol));
 
+        var asset = await GetOrCreateCustomAssetAsync(normalizedSymbol, cancellationToken);
         var entity = await SaveMarketPriceAsync(
-            normalizedSymbol,
+            asset,
             entity =>
             {
-                entity.CompanyName = null;
                 entity.CurrentPrice = null;
                 entity.DayHigh = null;
                 entity.DayLow = null;
@@ -130,7 +189,8 @@ public class MarketPriceService(
             cancellationToken
         );
 
-        await refreshQueue.EnqueueAsync(normalizedSymbol, cancellationToken);
+        await portfolioPositionQueue.EnqueueAssetAsync(entity.AssetId, cancellationToken);
+        await refreshQueue.EnqueueAsync(asset.Symbol, cancellationToken);
 
         return ToQuote(entity, isRefreshing: true);
     }
@@ -154,15 +214,21 @@ public class MarketPriceService(
         if (string.IsNullOrWhiteSpace(normalizedSymbol))
             return MarketPriceQuote.Unavailable(normalizedSymbol);
 
-        var existing = await context.MarketPrices.FindAsync([normalizedSymbol], cancellationToken);
+        var asset = await ResolvePreferredAssetAsync(normalizedSymbol, cancellationToken);
+        if (asset is null)
+            return MarketPriceQuote.Unavailable(normalizedSymbol);
+
+        var existing = await context
+            .MarketPrices.Include(price => price.Asset)
+            .FirstOrDefaultAsync(price => price.AssetId == asset.Id, cancellationToken);
         if (existing?.IsManual == true)
             return ToQuote(existing);
 
-        var isOpen = await IsOpenPositionAsync(normalizedSymbol, cancellationToken);
+        var isOpen = await IsOpenPositionAsync(asset.Id, cancellationToken);
         if (!isOpen)
         {
             var closedEntity = await SaveMarketPriceAsync(
-                normalizedSymbol,
+                asset,
                 entity =>
                 {
                     if (entity.IsManual)
@@ -182,12 +248,13 @@ public class MarketPriceService(
                 cancellationToken
             );
 
+            await portfolioPositionQueue.EnqueueAssetAsync(closedEntity.AssetId, cancellationToken);
             return ToQuote(closedEntity);
         }
 
-        var providerQuote = await provider.GetQuoteAsync(normalizedSymbol, cancellationToken);
+        var providerQuote = await provider.GetQuoteAsync(asset.Symbol, cancellationToken);
         var refreshedEntity = await SaveMarketPriceAsync(
-            normalizedSymbol,
+            asset,
             entity =>
             {
                 if (entity.IsManual)
@@ -210,8 +277,7 @@ public class MarketPriceService(
                     return true;
                 }
 
-                entity.ProviderSymbol = providerQuote.Symbol;
-                entity.CompanyName = providerQuote.CompanyName;
+                entity.ProviderSymbol = asset.ProviderSymbol;
                 entity.CurrentPrice = providerQuote.CurrentPrice;
                 entity.DayHigh = providerQuote.DayHigh;
                 entity.DayLow = providerQuote.DayLow;
@@ -226,28 +292,39 @@ public class MarketPriceService(
             cancellationToken
         );
 
+        await portfolioPositionQueue.EnqueueAssetAsync(refreshedEntity.AssetId, cancellationToken);
         return ToQuote(refreshedEntity);
     }
 
     private async Task<MarketPrice> SaveMarketPriceAsync(
-        string symbol,
+        Asset asset,
         Func<MarketPrice, bool> applyChanges,
         CancellationToken cancellationToken
     )
     {
-        var normalizedSymbol = MarketPriceSymbols.Normalize(symbol);
-
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var entity = await context.MarketPrices.FindAsync(
-                [normalizedSymbol],
-                cancellationToken
-            );
+            MarketPrice? entity = null;
+            if (asset.Id > 0)
+            {
+                entity = await context
+                    .MarketPrices.Include(price => price.Asset)
+                    .FirstOrDefaultAsync(price => price.AssetId == asset.Id, cancellationToken);
+            }
+
             if (entity is null)
             {
-                entity = new MarketPrice { Symbol = normalizedSymbol };
+                entity = new MarketPrice
+                {
+                    Asset = asset,
+                    Symbol = asset.Symbol,
+                    ProviderSymbol = asset.ProviderSymbol,
+                };
                 context.MarketPrices.Add(entity);
             }
+
+            entity.Symbol = asset.Symbol;
+            entity.ProviderSymbol = asset.ProviderSymbol;
 
             if (!applyChanges(entity))
                 return entity;
@@ -260,43 +337,39 @@ public class MarketPriceService(
             catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt == 0)
             {
                 context.ChangeTracker.Clear();
+                asset = await context.Assets.FirstAsync(
+                    item => item.Id == asset.Id,
+                    cancellationToken
+                );
             }
         }
 
-        throw new InvalidOperationException(
-            $"Market price for {normalizedSymbol} could not be saved."
-        );
+        throw new InvalidOperationException($"Market price for {asset.Symbol} could not be saved.");
     }
 
     private async Task<IReadOnlyList<string>> GetActiveSymbolsAsync(
         CancellationToken cancellationToken
     )
     {
-        var transactions = await context
-            .Transactions.AsNoTracking()
-            .OrderBy(transaction => transaction.Date)
-            .ThenBy(transaction => transaction.Id)
+        var symbols = await context
+            .PortfolioPositions.AsNoTracking()
+            .Where(position => !position.IsClosed)
+            .Select(position => position.Symbol)
             .ToListAsync(cancellationToken);
 
-        return transactions
-            .GroupBy(transaction => MarketPriceSymbols.Normalize(transaction.Symbol))
-            .Select(PortfolioCalculations.CalculatePosition)
-            .Where(position => !PortfolioCalculations.IsClosedPosition(position.NetQuantity))
-            .Select(position => MarketPriceSymbols.Normalize(position.Symbol))
+        return symbols
+            .Select(MarketPriceSymbols.Normalize)
             .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private async Task<bool> IsOpenPositionAsync(
-        string symbol,
-        CancellationToken cancellationToken
-    )
+    private async Task<bool> IsOpenPositionAsync(int assetId, CancellationToken cancellationToken)
     {
-        var normalizedSymbol = MarketPriceSymbols.Normalize(symbol);
         var transactions = await context
             .Transactions.AsNoTracking()
-            .Where(transaction => transaction.Symbol.ToUpper() == normalizedSymbol)
+            .Include(transaction => transaction.Asset)
+            .Where(transaction => transaction.AssetId == assetId)
             .OrderBy(transaction => transaction.Date)
             .ThenBy(transaction => transaction.Id)
             .ToListAsync(cancellationToken);
@@ -305,39 +378,106 @@ public class MarketPriceService(
             return false;
 
         var position = PortfolioCalculations.CalculatePosition(
-            transactions.GroupBy(transaction => MarketPriceSymbols.Normalize(transaction.Symbol)).Single()
+            transactions.GroupBy(transaction => transaction.AssetId).Single()
         );
 
         return !PortfolioCalculations.IsClosedPosition(position.NetQuantity);
     }
 
-    private static MarketPriceQuote ToQuote(MarketPrice price, bool isRefreshing = false)
+    private async Task<Asset> GetOrCreateCustomAssetAsync(
+        string normalizedSymbol,
+        CancellationToken cancellationToken
+    )
     {
-        if (!price.IsAvailable || price.CurrentPrice is null || price.CurrentPrice <= 0)
-            return MarketPriceQuote.Unavailable(price.Symbol, price.Error, isRefreshing);
+        var asset = await ResolvePreferredAssetAsync(normalizedSymbol, cancellationToken);
+        if (asset is not null)
+            return asset;
 
-        return new MarketPriceQuote
+        asset = new Asset
         {
-            Symbol = price.Symbol,
-            CompanyName = price.CompanyName,
-            CurrentPrice = price.CurrentPrice,
-            DayHigh = price.DayHigh,
-            DayLow = price.DayLow,
-            MarketCap = price.MarketCap,
-            FetchedAt = price.FetchedAt,
-            DelayMinutes = CalculateDelayMinutes(price.FetchedAt),
-            IsAvailable = true,
-            IsManual = price.IsManual,
-            IsRefreshing = isRefreshing,
-            ManualUpdatedAt = price.ManualUpdatedAt,
-            Error = price.Error,
+            Symbol = normalizedSymbol,
+            Name = normalizedSymbol,
+            AssetType = "custom",
+            Market = "MANUAL",
+            Currency = "TRY",
+            ProviderSymbol = normalizedSymbol,
+            Source = "manual",
+            IsCustom = true,
+            IsActive = true,
+            LastSyncedAt = DateTime.UtcNow,
         };
+
+        context.Assets.Add(asset);
+        return asset;
     }
 
-    private static int? CalculateDelayMinutes(DateTime? fetchedAt) =>
-        fetchedAt is null
-            ? null
-            : Math.Max(0, (int)Math.Floor((DateTime.UtcNow - fetchedAt.Value).TotalMinutes));
+    private async Task<Asset?> ResolvePreferredAssetAsync(
+        string normalizedSymbol,
+        CancellationToken cancellationToken
+    )
+    {
+        var assets = await context
+            .Assets.Where(asset => asset.Symbol == normalizedSymbol)
+            .OrderByDescending(asset => asset.IsActive)
+            .ThenBy(asset => asset.IsCustom)
+            .ThenBy(asset => asset.Id)
+            .ToListAsync(cancellationToken);
+
+        return SelectPreferredAsset(normalizedSymbol, assets);
+    }
+
+    private async Task<Dictionary<string, Asset>> ResolvePreferredAssetsAsync(
+        IReadOnlyList<string> normalizedSymbols,
+        CancellationToken cancellationToken
+    )
+    {
+        var symbolSet = normalizedSymbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var assets = await context
+            .Assets.Where(asset => symbolSet.Contains(asset.Symbol))
+            .OrderByDescending(asset => asset.IsActive)
+            .ThenBy(asset => asset.IsCustom)
+            .ThenBy(asset => asset.Id)
+            .ToListAsync(cancellationToken);
+
+        return normalizedSymbols
+            .Select(symbol => new
+            {
+                Symbol = symbol,
+                Asset = SelectPreferredAsset(
+                    symbol,
+                    assets
+                        .Where(asset =>
+                            string.Equals(asset.Symbol, symbol, StringComparison.OrdinalIgnoreCase)
+                        )
+                        .ToList()
+                ),
+            })
+            .Where(item => item.Asset is not null)
+            .ToDictionary(
+                item => item.Symbol,
+                item => item.Asset!,
+                StringComparer.OrdinalIgnoreCase
+            );
+    }
+
+    private static Asset? SelectPreferredAsset(string normalizedSymbol, IReadOnlyList<Asset> assets)
+    {
+        if (assets.Count == 0)
+            return null;
+
+        if (assets.Count == 1)
+            return assets[0];
+
+        var preferredAsset =
+            normalizedSymbol.Length == 3
+                ? assets.FirstOrDefault(asset => asset.AssetType == "fund")
+                : assets.FirstOrDefault(asset => asset.AssetType == "stock");
+
+        return preferredAsset ?? assets.FirstOrDefault(asset => asset.IsCustom) ?? assets[0];
+    }
+
+    private static MarketPriceQuote ToQuote(MarketPrice price, bool isRefreshing = false)
+        => MarketPriceQuoteFactory.ToQuote(price, isRefreshing);
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgresException

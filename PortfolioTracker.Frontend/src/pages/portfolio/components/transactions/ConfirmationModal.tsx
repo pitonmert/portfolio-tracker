@@ -1,4 +1,6 @@
-import { ModalShell } from "../../../../components/ui/ModalShell";
+import { ModalShell } from "@/components/ui/ModalShell";
+import { uiStyles } from "@/components/ui/styles";
+import { cx } from "@/utils/cx";
 
 interface ConfirmationModalProps {
   title: string;
@@ -12,22 +14,14 @@ interface ConfirmationModalProps {
 }
 
 const styles = {
-  backdrop:
-    "fixed inset-0 z-[140] flex items-center justify-center bg-[var(--backdrop)] px-3 py-4 backdrop-blur-sm",
-  modal:
-    "w-full max-w-sm rounded-2xl border border-[color:var(--line-soft)] bg-[var(--bg)] p-5 text-[var(--ink)] shadow-xl",
-  title:
-    "m-0 font-[family-name:var(--font-display)] text-xl font-bold leading-tight text-[var(--ink)]",
   message: "mt-3 text-sm leading-6 text-[var(--ink-2)]",
   actions: "mt-5 flex flex-row justify-end gap-2",
   cancelButton:
-    "inline-flex items-center justify-center rounded-xl bg-transparent px-4 py-2.5 text-sm font-medium text-[var(--ink-2)] transition-colors hover:bg-[var(--bg-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]",
+    "rounded-xl border-0 bg-transparent py-2.5 text-[var(--ink-2)] hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]",
   confirmButtonBase:
-    "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold shadow-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-70",
-  confirmButtonDefault:
-    "bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] focus-visible:outline-[var(--accent)]",
-  confirmButtonDanger:
-    "bg-[var(--expense)] text-white hover:opacity-90 focus-visible:outline-[var(--expense)]",
+    "rounded-xl py-2.5 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+  confirmButtonDefault: "focus-visible:outline-[var(--accent)]",
+  confirmButtonDanger: "focus-visible:outline-[var(--expense)]",
   spinner:
     "inline-block h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current",
 };
@@ -42,21 +36,25 @@ export default function ConfirmationModal({
   onConfirm,
   onCancel,
 }: ConfirmationModalProps) {
-  const confirmButtonClass = `${styles.confirmButtonBase} ${
-    tone === "danger" ? styles.confirmButtonDanger : styles.confirmButtonDefault
-  }`;
+  const confirmButtonClass = cx(
+    tone === "danger" ? uiStyles.buttonDanger : uiStyles.buttonPrimary,
+    styles.confirmButtonBase,
+    tone === "danger"
+      ? styles.confirmButtonDanger
+      : styles.confirmButtonDefault,
+  );
 
   return (
-    <ModalShell backdropClassName={styles.backdrop} onClose={onCancel}>
+    <ModalShell backdropClassName={uiStyles.modalBackdrop} onClose={onCancel}>
       <section
-        className={styles.modal}
+        className={uiStyles.modalPanel}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirmation-title"
         aria-describedby="confirmation-message"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="confirmation-title" className={styles.title}>
+        <h2 id="confirmation-title" className={uiStyles.modalTitle}>
           {title}
         </h2>
         <p id="confirmation-message" className={styles.message}>
@@ -66,7 +64,7 @@ export default function ConfirmationModal({
         <div className={styles.actions}>
           <button
             type="button"
-            className={styles.cancelButton}
+            className={cx(uiStyles.buttonSecondary, styles.cancelButton)}
             onClick={onCancel}
             disabled={loading}
           >

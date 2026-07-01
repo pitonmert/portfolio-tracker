@@ -4,12 +4,57 @@ from typing import Any
 import borsapy as bp
 
 from app.core.settings import get_settings
-from app.models import AssetType, QuoteResponse
+from app.models import AssetCatalogItem, AssetType, QuoteResponse
 
 
 class BorsapyProvider:
     def __init__(self) -> None:
         self._settings = get_settings()
+
+    def get_stock_assets(self) -> list[AssetCatalogItem]:
+        try:
+            frame = bp.screen_stocks()
+        except Exception:
+            return []
+
+        return [
+            AssetCatalogItem(
+                symbol=symbol,
+                name=name,
+                assetType=AssetType.STOCK,
+                market="BIST",
+                providerSymbol=symbol,
+                source=self._settings.source_name,
+                rawType="screen_stocks",
+            )
+            for row in dataframe_records(frame)
+            if (symbol := normalize_symbol(str(row.get("symbol", ""))))
+            for name in [to_text(row.get("name"))]
+        ]
+
+    def get_fund_assets(self, fund_type: str) -> list[AssetCatalogItem]:
+        normalized_fund_type = normalize_symbol(fund_type)
+
+        try:
+            frame = bp.screen_funds(fund_type=normalized_fund_type, limit=5000)
+        except Exception:
+            return []
+
+        return [
+            AssetCatalogItem(
+                symbol=symbol,
+                name=name,
+                assetType=AssetType.FUND,
+                market="TEFAS",
+                providerSymbol=symbol,
+                source=self._settings.source_name,
+                fundType=normalized_fund_type,
+                rawType=to_text(row.get("fund_type")),
+            )
+            for row in dataframe_records(frame)
+            if (symbol := normalize_symbol(str(row.get("fund_code", ""))))
+            for name in [to_text(row.get("name"))]
+        ]
 
     def get_stock_quote(self, symbol: str) -> QuoteResponse:
         normalized_symbol = normalize_symbol(symbol)
@@ -119,6 +164,16 @@ def normalize_symbol(symbol: str) -> str:
     return symbol.strip().upper()
 
 
+def dataframe_records(frame: Any) -> list[dict[str, Any]]:
+    if frame is None:
+        return []
+
+    try:
+        return frame.to_dict(orient="records")
+    except Exception:
+        return []
+
+
 def safe_object_get(source: Any, key: str) -> Any:
     try:
         value = getattr(source, key)
@@ -161,6 +216,14 @@ def first_text(data: Any, *keys: str) -> str | None:
             return text
 
     return None
+
+
+def to_text(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    return text or None
 
 
 def latest_history_price(fund: Any) -> float | None:

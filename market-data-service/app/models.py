@@ -14,6 +14,18 @@ class HealthResponse(BaseModel):
     status: str
 
 
+class AssetCatalogItem(BaseModel):
+    symbol: str
+    name: str | None = None
+    assetType: AssetType
+    market: str
+    currency: str = "TRY"
+    providerSymbol: str
+    source: str = "borsapy"
+    fundType: str | None = None
+    rawType: str | None = None
+
+
 class QuoteResponse(BaseModel):
     symbol: str
     assetType: AssetType
@@ -38,4 +50,3 @@ class QuoteResponse(BaseModel):
             isAvailable=False,
             error=error,
         )
-

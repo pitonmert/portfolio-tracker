@@ -7,6 +7,11 @@ public interface IMarketPriceService
         CancellationToken cancellationToken
     );
 
+    Task<IReadOnlyDictionary<int, MarketPriceQuote>> GetQuotesByAssetIdsAsync(
+        IEnumerable<int> assetIds,
+        CancellationToken cancellationToken
+    );
+
     Task<MarketPriceQuote> GetQuoteAsync(string symbol, CancellationToken cancellationToken);
 
     Task<MarketPriceQuote> SaveManualPriceAsync(

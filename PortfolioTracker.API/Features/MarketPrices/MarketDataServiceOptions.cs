@@ -8,4 +8,3 @@ public class MarketDataServiceOptions
 
     public int RefreshIntervalMinutes { get; set; } = 10;
 }
-

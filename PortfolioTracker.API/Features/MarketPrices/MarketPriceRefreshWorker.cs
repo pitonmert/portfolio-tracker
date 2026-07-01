@@ -48,4 +48,3 @@ public class MarketPriceRefreshWorker(
     private TimeSpan GetRefreshInterval() =>
         TimeSpan.FromMinutes(Math.Max(1, options.Value.RefreshIntervalMinutes));
 }
-
