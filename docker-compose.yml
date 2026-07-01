@@ -1,0 +1,137 @@
+services:
+  db:
+    image: postgres:17-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-budgettracking}
+      POSTGRES_USER: ${POSTGRES_USER:-budgettracking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-budgettracking_password}
+    volumes:
+      - budgettracking-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  market-data-service:
+    build:
+      context: ./market-data-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./PortfolioTracker.API
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-budgettracking};Username=${POSTGRES_USER:-budgettracking};Password=${POSTGRES_PASSWORD:-budgettracking_password}
+      Database__AutoMigrate: "true"
+      Https__Redirect: "false"
+      MarketData__BaseUrl: http://market-data-service:8000
+    depends_on:
+      db:
+        condition: service_healthy
+      market-data-service:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-5219}:8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./PortfolioTracker.Frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command:
+      [
+        "tunnel",
+        "--no-autoupdate",
+        "run",
+        "--token",
+        "${CLOUDFLARE_TUNNEL_TOKEN:-}",
+      ]
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
+  api-dev:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    command: dotnet watch run --urls http://0.0.0.0:5219
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-budgettracking};Username=${POSTGRES_USER:-budgettracking};Password=${POSTGRES_PASSWORD:-budgettracking_password}
+      Database__AutoMigrate: "true"
+      Https__Redirect: "false"
+      MarketData__BaseUrl: http://market-data-service:8000
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      market-data-service:
+        condition: service_healthy
+    ports:
+      - "5220:5219"
+    volumes:
+      - ./PortfolioTracker.API:/src
+      - api-dev-nuget:/root/.nuget/packages
+    profiles:
+      - dev
+
+  frontend-dev:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_DEV_PROXY_TARGET: http://api-dev:5219
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api-dev
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./PortfolioTracker.Frontend:/app
+      - frontend-dev-node-modules:/app/node_modules
+    profiles:
+      - dev
+
+  dev:
+    image: alpine:3.20
+    command: sh -c "echo 'Dev stack is running on http://localhost:5174'; tail -f /dev/null"
+    depends_on:
+      - frontend-dev
+    profiles:
+      - dev
+
+volumes:
+  budgettracking-postgres-data:
+  api-dev-nuget:
+  frontend-dev-node-modules:
