@@ -2,6 +2,10 @@
 
 PortfolioTracker için dahili fiyat sağlayıcı servisidir. Frontend bu servisi doğrudan çağırmaz; PortfolioTracker API, fiyatları bu servis üzerinden alır ve kendi `MarketPrices` tablosuna yazar.
 
+## Provider
+
+Bu servis fiyat ve varlık verileri için [`borsapy`](https://github.com/saidsurucu/borsapy/) kullanır. Kurulum, kullanım detayları ve lisans/kullanım koşulları için upstream borsapy reposunu takip et.
+
 ## Endpoints
 
 - `GET /health`
@@ -35,5 +39,5 @@ Docker Compose içinde hosttan `http://localhost:8001`, servis ağından `http:/
 ## Tests
 
 ```bash
-pytest
+python3 -m pytest
 ```

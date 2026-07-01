@@ -13,9 +13,8 @@ builder
     .Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Avoid infinite loops when serializing circular object graphs.
+        // EF navigation properties can form cycles in API responses.
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        // Serialize enums as strings (e.g. "Buy" / "Sell") for a more readable API surface.
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
@@ -60,7 +59,6 @@ builder.Services.AddSingleton<
     PortfolioPositionRecalculationQueue
 >();
 
-// Register service via interface so dependents are decoupled from the implementation.
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IPortfolioService, PortfolioService>();
 builder.Services.AddScoped<
@@ -98,9 +96,34 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet(
+    "/health",
+    async (
+        ApplicationDbContext db,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken
+    ) =>
+    {
+        try
+        {
+            var canConnect = await db.Database.CanConnectAsync(cancellationToken);
+            if (canConnect)
+                return Results.Ok(new { status = "healthy", database = "healthy" });
+        }
+        catch (Exception exception)
+        {
+            loggerFactory
+                .CreateLogger("HealthCheck")
+                .LogWarning(exception, "Database health check failed.");
+        }
 
-// Convenience redirect so navigating to the root opens Swagger UI.
+        return Results.Json(
+            new { status = "unhealthy", database = "unhealthy" },
+            statusCode: StatusCodes.Status503ServiceUnavailable
+        );
+    }
+);
+
 app.MapGet("/", () => Results.Redirect("/swagger/index.html"));
 
 app.Run();

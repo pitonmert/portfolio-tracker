@@ -1,6 +1,7 @@
-fastapi
-uvicorn[standard]
-borsapy
-pandas
-pytest
-httpx
+fastapi==0.139.0
+uvicorn[standard]==0.49.0
+borsapy==0.10.2
+pandas==3.0.3
+pytest==9.1.1
+httpx==0.28.1
+httpx2==2.5.0

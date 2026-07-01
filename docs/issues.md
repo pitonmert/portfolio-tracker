@@ -82,7 +82,7 @@ sorunun en altına şu alanı ekle:
 `Açık` · `Devam Ediyor` · `Çözüldü` · `Çözülmeyecek`
 -->
 
-# Sorunlar (8 Açık)
+# Sorunlar (3 Açık)
 
 ## #1 - Asset çözümleme davranışı servisler arasında tutarsız
 - **Önem Derecesi:** Orta
@@ -112,37 +112,13 @@ return preferredAsset ?? assets.FirstOrDefault(asset => asset.IsCustom) ?? asset
 Asset çözümleme ve custom asset oluşturma tek bir AssetResolver/AssetService benzeri bileşene taşınmalı. Symbol-only isteklerde uygulanacak tercih kuralı tek yerde tanımlanmalı; gerçekten belirsiz durumda tüm çağrılar aynı şekilde 400/log/explicit AssetId davranışını kullanmalı.
 ```
 
-## #2 - Asset sync katalogdan düşen kayıtları pasifleştirmiyor
-- **Önem Derecesi:** Orta
-- **Durum:** Açık
-- **Etiketler:** Backend, Bug
-- **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Assets/AssetSyncService.cs` · `SyncAsync` · L10
-- **Açıklama:** Senkronizasyon akışı sağlayıcıdan gelen kayıtları upsert edip `IsActive = true` yapıyor, ancak artık sağlayıcıdan dönmeyen katalog asset'lerini pasifleştirmiyor. Borsadan çıkan veya katalogdan kaldırılan bir varlık veritabanında aktif kalırsa arama sonuçlarında görünmeye devam eder.
-- **Mevcut Durum:**
-```csharp
-foreach (var item in normalizedItems)
-{
-    // upsert
-    asset.IsCustom = false;
-    asset.IsActive = true;
-    asset.LastSyncedAt = now;
-}
-
-await context.SaveChangesAsync(cancellationToken);
-```
-- **Önerilen Eylem:**
-```text
-Sync sonunda custom olmayan mevcut katalog asset'leri için bu sync içinde görülmeyen kayıtlar IsActive=false yapılmalı. Karar anahtarı mevcut unique key ile aynı olmalı: Symbol + AssetType + Market. Custom asset'ler pasifleştirme dışında bırakılmalı.
-```
-
-## #3 - Asset arama ve fiyat yenileme tüm transaction tablosunu bellekte gruplayabiliyor
+## #2 - Asset arama transaction tablosunu bellekte gruplayabiliyor
 - **Önem Derecesi:** Düşük
 - **Durum:** Açık
 - **Etiketler:** Backend, Performans
 - **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Assets/AssetSearchService.cs` · `GetTransactionSummariesAsync` · L106 · `PortfolioTracker.API/Features/MarketPrices/MarketPriceService.cs` · `GetActiveSymbolsAsync` · L345
-- **Açıklama:** Asset arama ve periyodik fiyat yenileme akışları, açık pozisyonları bulmak için tüm transaction kayıtlarını `ToListAsync` ile belleğe çekip sonrasında grupluyor. Kişisel portföy ölçeğinde kabul edilebilir olsa da arama isteği sık çalıştığı için veri büyüdükçe gecikme ve bellek maliyeti artabilir.
+- **Konum:** `PortfolioTracker.API/Features/Assets/AssetSearchService.cs` · `GetTransactionSummariesAsync` · L106
+- **Açıklama:** Asset arama akışı, sonuçları açık pozisyon ve son kullanım bilgisiyle sıralamak için tüm transaction kayıtlarını `ToListAsync` ile belleğe çekip sonrasında grupluyor. Kişisel portföy ölçeğinde kabul edilebilir olsa da arama isteği sık çalıştığı için veri büyüdükçe gecikme ve bellek maliyeti artabilir. Fiyat yenileme akışı artık aktif sembolleri `PortfolioPositions` read model üzerinden okuduğu için bu sorun market price refresh tarafını kapsamıyor.
 - **Mevcut Durum:**
 ```csharp
 var transactions = await context
@@ -159,90 +135,15 @@ return transactions
 ```
 - **Önerilen Eylem:**
 ```text
-Kısa vadede sonuçlar cache'lenmeli veya yalnızca gerekli transaction alanları select edilmeli. Orta vadede pozisyon özeti için incremental/materialized bir okuma modeli ya da SQL tarafında özetleme stratejisi değerlendirilmeli.
+Kısa vadede yalnızca gerekli transaction alanları select edilmeli veya asset arama için kısa süreli cache kullanılmalı. Orta vadede açık pozisyon ve son kullanım bilgisi `PortfolioPositions` read model ya da ayrı bir lightweight lookup üzerinden alınmalı.
 ```
 
-## #4 - API health check veritabanı sağlığını doğrulamıyor
-- **Önem Derecesi:** Orta
-- **Durum:** Açık
-- **Etiketler:** DevOps, Bug
-- **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Program.cs` · `/health` endpoint'i · L91 · `docker-compose.yml` · `api.healthcheck`
-- **Açıklama:** `/health` endpoint'i her zaman statik healthy cevabı veriyor. Docker compose frontend'i API healthcheck sonucuna bağladığı için API container'ı veritabanına bağlanamasa veya migration başarısız olsa bile orchestration katmanı servisi sağlıklı kabul edebilir.
-- **Mevcut Durum:**
-```csharp
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
-```
-- **Önerilen Eylem:**
-```text
-ASP.NET Core HealthChecks kullanılmalı. En azından ApplicationDbContext üzerinden CanConnectAsync veya AddNpgSql tabanlı DB health check eklenmeli; compose healthcheck bu gerçek durumu okumalı.
-```
-
-## #5 - AssetId verildiğinde transaction request hâlâ Symbol zorunlu tutuyor
-- **Önem Derecesi:** Düşük
-- **Durum:** Açık
-- **Etiketler:** Backend, Bakım
-- **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Transactions/TransactionRequests.cs` · `CreateTransactionRequest` · L9 · `UpdateTransactionRequest` · L23
-- **Açıklama:** Transaction create/update isteklerinde `AssetId` opsiyonel olarak destekleniyor, fakat `Symbol` alanı `[Required]` olduğu için asset seçimi yapıldığında bile client'ın sembol göndermesi gerekiyor. Bu, asset ilişkili yeni API yüzeyiyle tam uyumlu değil ve gelecekte assetId-only istemciler için gereksiz validasyon hatasına dönüşebilir.
-- **Mevcut Durum:**
-```csharp
-public record CreateTransactionRequest(
-    int? AssetId,
-    [Required, MaxLength(120)] string Symbol,
-    // ...
-);
-
-public record UpdateTransactionRequest(
-    int Id,
-    int? AssetId,
-    [Required, MaxLength(120)] string Symbol,
-    // ...
-);
-```
-- **Önerilen Eylem:**
-```text
-Symbol nullable yapılmalı ve koşullu validasyon uygulanmalı: AssetId varsa Symbol opsiyonel, AssetId yoksa Symbol zorunlu olmalı. Controller/service tarafında net ve tek tip 400 cevabı dönülmeli.
-```
-
-## #6 - PortfolioCalculations kritik edge case'ler için izole testlere sahip değil
-- **Önem Derecesi:** Orta
-- **Durum:** Açık
-- **Etiketler:** Test, Bakım
-- **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Portfolio/PortfolioCalculations.cs` · `tests/PortfolioTracker.API.IntegrationTests`
-- **Açıklama:** Portföyün WAC, realized/unrealized PnL, kapalı pozisyon toleransı ve dashboard summary hesapları merkezi olarak `PortfolioCalculations` içinde duruyor. Bu hesaplar entegrasyon testleriyle dolaylı doğrulanıyor, ancak hesaplama helper'larını doğrudan hedefleyen birim testleri yok. Finansal edge case'lerde regresyon yakalamak zorlaşabilir.
-- **Mevcut Durum:**
-```text
-Integration testlerde portfolio endpoint davranışı doğrulanıyor; PortfolioCalculations.CalculatePosition, CalculateDashboardPosition ve CalculateDashboardSummary için doğrudan unit test dosyası bulunmuyor.
-```
-- **Önerilen Eylem:**
-```text
-PortfolioCalculations için ayrı unit test sınıfı eklenmeli. En azından art arda kısmi satış, tam kapanış, tolerans sınırı, fiyat yokken fallback, manual quote ve summary toplamları izole senaryolarla kapsanmalı.
-```
-
-## #7 - TransactionsController endpoint'lerinde CancellationToken kullanılmıyor
-- **Önem Derecesi:** Orta
-- **Durum:** Açık
-- **Etiketler:** Backend, Performans
-- **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Transactions/TransactionsController.cs` · `ITransactionService`
-- **Açıklama:** Controller üzerindeki endpoint'lerde `CancellationToken` alınmıyor ve alt servislere geçilmiyor. Bu durum, istemci bağlantıyı kestiğinde uzun süren veritabanı sorgularının iptal edilememesine, gereksiz kaynak tüketimine ve dolaylı N+1 thread/blockaj durumlarına yol açabilir.
-- **Mevcut Durum:**
-```csharp
-public async Task<IActionResult> GetAll([FromQuery] TransactionQuery query)
-```
-- **Önerilen Eylem:**
-```text
-Tüm asenkron endpoint'lere `CancellationToken cancellationToken` parametresi eklenmeli. `ITransactionService` ve `TransactionService` içindeki metot imzaları güncellenerek token `ToListAsync()`, `FirstOrDefaultAsync()` ve `SaveChangesAsync()` gibi DB metotlarına iletilmeli.
-```
-
-## #8 - PortfolioSettings oluşturulurken Race Condition (yarış durumu) oluşabilir
+## #3 - PortfolioSettings oluşturulurken Race Condition (yarış durumu) oluşabilir
 - **Önem Derecesi:** Düşük
 - **Durum:** Açık
 - **Etiketler:** Backend, Bug
 - **Bağımlılıklar:** Yok
-- **Konum:** `PortfolioTracker.API/Features/Portfolio/PortfolioService.cs` · `GetSettingsAsync` · L95
+- **Konum:** `PortfolioTracker.API/Features/Portfolio/PortfolioService.cs` · `GetSettingsAsync` · L83
 - **Açıklama:** Veritabanında henüz ayar kaydı yokken, eşzamanlı gelen iki istek aynı anda `settings is not null` kontrolünden geçemeyip iki farklı kayıt oluşturabilir. `OrderBy(settings => settings.Id).FirstOrDefaultAsync()` ile ilk kayıt dönülse bile gereksiz veritabanı büyümesi ve potansiyel veri karışıklığı riski vardır.
 - **Mevcut Durum:**
 ```csharp

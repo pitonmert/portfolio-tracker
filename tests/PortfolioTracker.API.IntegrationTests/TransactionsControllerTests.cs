@@ -140,6 +140,50 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
+    public async Task Create_WithAssetIdOnly_ReturnsCreatedWithAssetSymbol()
+    {
+        var symbol = $"AID{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var assetId = await CreateAssetAsync(symbol);
+        var dto = new CreateTransactionRequest(
+            assetId,
+            null,
+            2m,
+            100m,
+            null,
+            TransactionType.Buy,
+            DateTime.UtcNow
+        );
+
+        var response = await _client.PostAsJsonAsync("/api/transactions", dto);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var transaction = await response.Content.ReadFromJsonAsync<TransactionResponse>(
+            _jsonOptions
+        );
+        Assert.NotNull(transaction);
+        Assert.Equal(assetId, transaction!.AssetId);
+        Assert.Equal(symbol, transaction.Symbol);
+    }
+
+    [Fact]
+    public async Task Create_WithoutAssetIdAndBlankSymbol_ReturnsBadRequest()
+    {
+        var dto = new CreateTransactionRequest(
+            null,
+            " ",
+            1m,
+            100m,
+            null,
+            TransactionType.Buy,
+            DateTime.UtcNow
+        );
+
+        var response = await _client.PostAsJsonAsync("/api/transactions", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Create_QueuesPortfolioPositionSnapshot()
     {
         var symbol = $"SNAP{Guid.NewGuid():N}"[..12].ToUpperInvariant();
@@ -243,6 +287,35 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
+    public async Task Update_WithAssetIdOnly_ChangesAsset()
+    {
+        var transaction = await CreateTransactionAsync();
+        var newSymbol = $"UPD{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var newAssetId = await CreateAssetAsync(newSymbol);
+        var dto = new UpdateTransactionRequest(
+            transaction!.Id,
+            newAssetId,
+            null,
+            5m,
+            75m,
+            null,
+            TransactionType.Buy,
+            DateTime.UtcNow
+        );
+
+        var response = await _client.PutAsJsonAsync($"/api/transactions/{transaction.Id}", dto);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var getResponse = await _client.GetAsync($"/api/transactions/{transaction.Id}");
+        var updated = await getResponse.Content.ReadFromJsonAsync<TransactionResponse>(
+            _jsonOptions
+        );
+        Assert.NotNull(updated);
+        Assert.Equal(newAssetId, updated!.AssetId);
+        Assert.Equal(newSymbol, updated.Symbol);
+    }
+
+    [Fact]
     public async Task Delete_WithExistingId_ReturnsNoContent()
     {
         var transaction = await CreateTransactionAsync();
@@ -279,6 +352,27 @@ public class TransactionsControllerTests : IClassFixture<CustomWebApplicationFac
         );
         var response = await _client.PostAsJsonAsync("/api/transactions", dto);
         return await response.Content.ReadFromJsonAsync<TransactionResponse>(_jsonOptions);
+    }
+
+    private async Task<int> CreateAssetAsync(string symbol)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var asset = new Asset
+        {
+            Symbol = symbol,
+            Name = $"{symbol} Test Asset",
+            AssetType = "stock",
+            Market = "BIST",
+            Currency = "TRY",
+            ProviderSymbol = symbol,
+            Source = "test",
+            IsActive = true,
+            LastSyncedAt = DateTime.UtcNow,
+        };
+        db.Assets.Add(asset);
+        await db.SaveChangesAsync();
+        return asset.Id;
     }
 
     private async Task<PortfolioPositionSnapshot> WaitForSnapshotAsync(

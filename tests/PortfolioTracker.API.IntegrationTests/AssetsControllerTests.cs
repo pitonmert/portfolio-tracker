@@ -50,6 +50,58 @@ public class AssetsControllerTests(CustomWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task Sync_DeactivatesMissingCatalogAssetsButKeepsCustomAssetsActive()
+    {
+        var client = factory.CreateClient();
+        var staleSymbol = $"STALE{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+        var customSymbol = $"CUSTOM{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Assets.AddRange(
+                new Asset
+                {
+                    Symbol = staleSymbol,
+                    Name = "Stale Catalog Asset",
+                    AssetType = "stock",
+                    Market = "BIST",
+                    Currency = "TRY",
+                    ProviderSymbol = staleSymbol,
+                    Source = "test",
+                    IsCustom = false,
+                    IsActive = true,
+                    LastSyncedAt = DateTime.UtcNow.AddDays(-1),
+                },
+                new Asset
+                {
+                    Symbol = customSymbol,
+                    Name = "Custom Asset",
+                    AssetType = "custom",
+                    Market = "MANUAL",
+                    Currency = "TRY",
+                    ProviderSymbol = customSymbol,
+                    Source = "manual",
+                    IsCustom = true,
+                    IsActive = true,
+                    LastSyncedAt = DateTime.UtcNow.AddDays(-1),
+                }
+            );
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsync("/api/assets/sync", null);
+
+        response.EnsureSuccessStatusCode();
+        using var assertScope = factory.Services.CreateScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var staleAsset = Assert.Single(assertDb.Assets, asset => asset.Symbol == staleSymbol);
+        var customAsset = Assert.Single(assertDb.Assets, asset => asset.Symbol == customSymbol);
+        Assert.False(staleAsset.IsActive);
+        Assert.True(customAsset.IsActive);
+    }
+
+    [Fact]
     public async Task Search_WithStockQuery_ReturnsStockAsset()
     {
         var client = factory.CreateClient();

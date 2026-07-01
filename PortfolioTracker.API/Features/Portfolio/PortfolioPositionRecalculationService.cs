@@ -20,6 +20,7 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
             }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt == 0)
             {
+                // A concurrent insert can win the race; reload state and apply the snapshot again.
                 context.ChangeTracker.Clear();
             }
         }
@@ -47,6 +48,7 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
 
         if (transactions.Count == 0)
         {
+            // A deleted last transaction removes the rebuildable read-model row.
             if (snapshot is not null)
             {
                 context.PortfolioPositions.Remove(snapshot);
@@ -64,10 +66,7 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
             .Include(price => price.Asset)
             .FirstOrDefaultAsync(price => price.AssetId == assetId, cancellationToken);
         var quote = marketPrice is null ? null : MarketPriceQuoteFactory.ToQuote(marketPrice);
-        var dashboardPosition = PortfolioCalculations.CalculateDashboardPosition(
-            position,
-            quote
-        );
+        var dashboardPosition = PortfolioCalculations.CalculateDashboardPosition(position, quote);
 
         snapshot ??= new PortfolioPositionSnapshot { AssetId = assetId };
         ApplySnapshot(
@@ -99,6 +98,7 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
             .ToListAsync(cancellationToken);
         if (staleSnapshots.Count > 0)
         {
+            // Rebuilds also clean rows left behind by direct database imports or manual edits.
             context.PortfolioPositions.RemoveRange(staleSnapshots);
             await context.SaveChangesAsync(cancellationToken);
         }

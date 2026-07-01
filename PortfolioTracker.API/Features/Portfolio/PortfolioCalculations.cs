@@ -5,6 +5,7 @@ namespace PortfolioTracker.API.Features.Portfolio;
 
 internal static class PortfolioCalculations
 {
+    // Small fractional remnants should not keep a position open.
     private const decimal ClosedPositionTolerance = 0.0001m;
 
     public static bool IsClosedPosition(decimal netQuantity) =>
@@ -22,6 +23,7 @@ internal static class PortfolioCalculations
         var runningCostBasis = 0m;
         var realizedPnL = 0m;
 
+        // WAC is recalculated from the remaining cost basis after each sell.
         foreach (var transaction in group)
         {
             var transactionAmount = transaction.TotalAmount;
@@ -86,6 +88,7 @@ internal static class PortfolioCalculations
         var isClosed = IsClosedPosition(position.NetQuantity);
         decimal? currentPrice = null;
 
+        // Missing or unavailable prices should not reuse stale market values.
         if (
             marketPrice?.IsAvailable == true
             && marketPrice.CurrentPrice is decimal price

@@ -2,20 +2,17 @@ using System.ComponentModel.DataAnnotations;
 
 namespace PortfolioTracker.API.Domain.Entities;
 
-// Stores a rebuildable portfolio position read model for fast dashboard reads.
+// Rebuildable read model used by portfolio endpoints instead of recalculating every request.
 public class PortfolioPositionSnapshot
 {
-    // Related asset identity. This is also the primary key for the snapshot row.
     [Key]
     public int AssetId { get; set; }
 
     public Asset Asset { get; set; } = null!;
 
-    // Asset symbol snapshot used by read endpoints.
     [MaxLength(120)]
     public string Symbol { get; set; } = string.Empty;
 
-    // Asset market snapshot used by grouping/filtering clients.
     [MaxLength(40)]
     public string? Market { get; set; }
 

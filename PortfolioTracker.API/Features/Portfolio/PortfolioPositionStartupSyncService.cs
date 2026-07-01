@@ -37,6 +37,7 @@ public class PortfolioPositionStartupSyncService(
                 .OrderBy(assetId => assetId)
                 .ToList();
 
+            // Startup sync is idempotent and only fills missing snapshots.
             foreach (var assetId in missingAssetIds)
             {
                 await queue.EnqueueAssetAsync(assetId, stoppingToken);

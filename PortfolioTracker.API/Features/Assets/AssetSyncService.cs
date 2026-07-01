@@ -16,6 +16,9 @@ public class AssetSyncService(ApplicationDbContext context, IAssetCatalogProvide
             .Where(item => !string.IsNullOrWhiteSpace(item.Symbol))
             .DistinctBy(item => (item.Symbol, item.AssetType, item.Market))
             .ToList();
+        var syncedKeys = normalizedItems
+            .Select(item => (item.Symbol, item.AssetType, item.Market))
+            .ToHashSet();
 
         var existingAssets = await context.Assets.ToListAsync(cancellationToken);
         var existingByKey = existingAssets.ToDictionary(asset =>
@@ -48,6 +51,16 @@ public class AssetSyncService(ApplicationDbContext context, IAssetCatalogProvide
             asset.IsActive = true;
             asset.LastSyncedAt = now;
             upserted++;
+        }
+
+        foreach (var asset in existingAssets.Where(asset => !asset.IsCustom && asset.IsActive))
+        {
+            var key = (asset.Symbol, asset.AssetType, asset.Market);
+            if (!syncedKeys.Contains(key))
+            {
+                asset.IsActive = false;
+                asset.LastSyncedAt = now;
+            }
         }
 
         await context.SaveChangesAsync(cancellationToken);

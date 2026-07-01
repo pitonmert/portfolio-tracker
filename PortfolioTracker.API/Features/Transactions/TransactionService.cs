@@ -7,18 +7,16 @@ using PortfolioTracker.API.Infrastructure.Persistence;
 
 namespace PortfolioTracker.API.Features.Transactions;
 
-/// <summary>
-/// Handles persistence and business logic for investment transactions.
-/// All write operations are immediately flushed via <see cref="DbContext.SaveChangesAsync()"/>.
-/// </summary>
 public class TransactionService(
     ApplicationDbContext context,
     IMarketPriceRefreshQueue marketPriceRefreshQueue,
     IPortfolioPositionRecalculationQueue portfolioPositionQueue
 ) : ITransactionService
 {
-    /// <inheritdoc/>
-    public async Task<IEnumerable<TransactionResponse>> GetAllAsync(TransactionQuery query)
+    public async Task<IEnumerable<TransactionResponse>> GetAllAsync(
+        TransactionQuery query,
+        CancellationToken cancellationToken = default
+    )
     {
         IQueryable<Transaction> transactions = context
             .Transactions.AsNoTracking()
@@ -27,26 +25,30 @@ public class TransactionService(
         var rows = await transactions
             .OrderByDescending(t => t.Date)
             .ThenByDescending(t => t.Id)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return rows.Select(TransactionResponse.FromEntity).ToList();
     }
 
-    /// <inheritdoc/>
-    public async Task<TransactionResponse?> GetByIdAsync(int id)
+    public async Task<TransactionResponse?> GetByIdAsync(
+        int id,
+        CancellationToken cancellationToken = default
+    )
     {
         var transaction = await context
             .Transactions.AsNoTracking()
             .Include(transaction => transaction.Asset)
-            .FirstOrDefaultAsync(transaction => transaction.Id == id);
+            .FirstOrDefaultAsync(transaction => transaction.Id == id, cancellationToken);
 
         return transaction is null ? null : TransactionResponse.FromEntity(transaction);
     }
 
-    /// <inheritdoc/>
-    public async Task<TransactionResponse> CreateAsync(CreateTransactionRequest request)
+    public async Task<TransactionResponse> CreateAsync(
+        CreateTransactionRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
-        var asset = await ResolveAssetAsync(request.AssetId, request.Symbol);
+        var asset = await ResolveAssetAsync(request.AssetId, request.Symbol, cancellationToken);
         var transaction = new Transaction
         {
             Asset = asset,
@@ -61,25 +63,28 @@ public class TransactionService(
             Date = request.TransactionDate ?? DateTime.UtcNow,
         };
 
-        await context.Transactions.AddAsync(transaction);
-        await context.SaveChangesAsync();
-        await portfolioPositionQueue.EnqueueAssetAsync(asset.Id);
-        await marketPriceRefreshQueue.EnqueueAsync(asset.Symbol);
+        await context.Transactions.AddAsync(transaction, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+        await portfolioPositionQueue.EnqueueAssetAsync(asset.Id, cancellationToken);
+        await marketPriceRefreshQueue.EnqueueAsync(asset.Symbol, cancellationToken);
         return TransactionResponse.FromEntity(transaction);
     }
 
-    /// <inheritdoc/>
-    public async Task<bool> UpdateAsync(int id, UpdateTransactionRequest request)
+    public async Task<bool> UpdateAsync(
+        int id,
+        UpdateTransactionRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         var transaction = await context
             .Transactions.Include(transaction => transaction.Asset)
-            .FirstOrDefaultAsync(transaction => transaction.Id == id);
+            .FirstOrDefaultAsync(transaction => transaction.Id == id, cancellationToken);
         if (transaction is null)
             return false;
 
         var oldAssetId = transaction.AssetId;
         var oldSymbol = transaction.Asset.Symbol;
-        var asset = await ResolveAssetAsync(request.AssetId, request.Symbol);
+        var asset = await ResolveAssetAsync(request.AssetId, request.Symbol, cancellationToken);
         transaction.Asset = asset;
         if (asset.Id > 0)
             transaction.AssetId = asset.Id;
@@ -93,35 +98,34 @@ public class TransactionService(
         transaction.Type = request.Type;
         transaction.Date = request.TransactionDate ?? transaction.Date;
 
-        await context.SaveChangesAsync();
-        await portfolioPositionQueue.EnqueueAssetAsync(asset.Id);
+        await context.SaveChangesAsync(cancellationToken);
+        await portfolioPositionQueue.EnqueueAssetAsync(asset.Id, cancellationToken);
 
         if (oldAssetId != asset.Id)
-            await portfolioPositionQueue.EnqueueAssetAsync(oldAssetId);
+            await portfolioPositionQueue.EnqueueAssetAsync(oldAssetId, cancellationToken);
 
-        await marketPriceRefreshQueue.EnqueueAsync(asset.Symbol);
+        await marketPriceRefreshQueue.EnqueueAsync(asset.Symbol, cancellationToken);
 
         if (!string.Equals(oldSymbol, asset.Symbol, StringComparison.OrdinalIgnoreCase))
-            await marketPriceRefreshQueue.EnqueueAsync(oldSymbol);
+            await marketPriceRefreshQueue.EnqueueAsync(oldSymbol, cancellationToken);
 
         return true;
     }
 
-    /// <inheritdoc/>
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
         var transaction = await context
             .Transactions.Include(transaction => transaction.Asset)
-            .FirstOrDefaultAsync(transaction => transaction.Id == id);
+            .FirstOrDefaultAsync(transaction => transaction.Id == id, cancellationToken);
         if (transaction is null)
             return false;
 
         var assetId = transaction.AssetId;
         var symbol = transaction.Asset.Symbol;
         context.Transactions.Remove(transaction);
-        await context.SaveChangesAsync();
-        await portfolioPositionQueue.EnqueueAssetAsync(assetId);
-        await marketPriceRefreshQueue.EnqueueAsync(symbol);
+        await context.SaveChangesAsync(cancellationToken);
+        await portfolioPositionQueue.EnqueueAssetAsync(assetId, cancellationToken);
+        await marketPriceRefreshQueue.EnqueueAsync(symbol, cancellationToken);
         return true;
     }
 
@@ -151,20 +155,28 @@ public class TransactionService(
         return transactions;
     }
 
-    private async Task<Asset> ResolveAssetAsync(int? assetId, string symbol)
+    private async Task<Asset> ResolveAssetAsync(
+        int? assetId,
+        string? symbol,
+        CancellationToken cancellationToken
+    )
     {
         if (assetId is int id)
         {
-            var asset = await context.Assets.FirstOrDefaultAsync(asset => asset.Id == id);
+            var asset = await context.Assets.FirstOrDefaultAsync(
+                asset => asset.Id == id,
+                cancellationToken
+            );
             return asset ?? throw new ArgumentException("Seçilen varlık bulunamadı.");
         }
 
+        // Symbol-only requests must fail when the catalog cannot identify one asset.
         var normalizedSymbol = NormalizeSymbol(symbol);
         var matches = await context
             .Assets.Where(asset => asset.Symbol == normalizedSymbol)
             .OrderByDescending(asset => asset.IsActive)
             .ThenBy(asset => asset.Id)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (matches.Count == 1)
             return matches[0];
@@ -174,10 +186,11 @@ public class TransactionService(
                 "Bu sembol birden fazla varlıkla eşleşiyor. Listeden seçim yap."
             );
 
+        // Unknown symbols remain usable by creating a manual asset.
         var customAsset = new Asset
         {
             Symbol = normalizedSymbol,
-            Name = symbol.Trim(),
+            Name = symbol!.Trim(),
             AssetType = "custom",
             Market = "MANUAL",
             Currency = "TRY",
@@ -192,13 +205,12 @@ public class TransactionService(
         return customAsset;
     }
 
-    private static string NormalizeSymbol(string symbol)
+    private static string NormalizeSymbol(string? symbol)
     {
-        var normalizedSymbol = symbol.Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Sembol boş olamaz.");
 
-        return normalizedSymbol;
+        return symbol.Trim().ToUpperInvariant();
     }
 
     private static string? NormalizeNote(string? note) =>

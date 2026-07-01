@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // Symbols can overlap across asset types and markets, so the catalog key uses all three.
         modelBuilder
             .Entity<Asset>()
             .HasIndex(asset => new

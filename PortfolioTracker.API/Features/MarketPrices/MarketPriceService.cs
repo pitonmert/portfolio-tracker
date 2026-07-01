@@ -221,12 +221,15 @@ public class MarketPriceService(
         var existing = await context
             .MarketPrices.Include(price => price.Asset)
             .FirstOrDefaultAsync(price => price.AssetId == asset.Id, cancellationToken);
+
+        // Manual overrides win until the user clears them.
         if (existing?.IsManual == true)
             return ToQuote(existing);
 
         var isOpen = await IsOpenPositionAsync(asset.Id, cancellationToken);
         if (!isOpen)
         {
+            // Closed positions should not keep auto-refreshing provider prices.
             var closedEntity = await SaveMarketPriceAsync(
                 asset,
                 entity =>
@@ -393,6 +396,7 @@ public class MarketPriceService(
         if (asset is not null)
             return asset;
 
+        // Manual prices can introduce assets that are not present in the synced catalog.
         asset = new Asset
         {
             Symbol = normalizedSymbol,
@@ -468,6 +472,7 @@ public class MarketPriceService(
         if (assets.Count == 1)
             return assets[0];
 
+        // Symbol-only price endpoints keep a deterministic default for backward compatibility.
         var preferredAsset =
             normalizedSymbol.Length == 3
                 ? assets.FirstOrDefault(asset => asset.AssetType == "fund")
@@ -476,8 +481,8 @@ public class MarketPriceService(
         return preferredAsset ?? assets.FirstOrDefault(asset => asset.IsCustom) ?? assets[0];
     }
 
-    private static MarketPriceQuote ToQuote(MarketPrice price, bool isRefreshing = false)
-        => MarketPriceQuoteFactory.ToQuote(price, isRefreshing);
+    private static MarketPriceQuote ToQuote(MarketPrice price, bool isRefreshing = false) =>
+        MarketPriceQuoteFactory.ToQuote(price, isRefreshing);
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgresException

@@ -92,8 +92,8 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Problem/Fırsat:** İşlem sayısı arttıkça manuel yedekleme, farklı cihazlara taşıma ve geçmiş veriyi toplu düzeltme zorlaşıyor.
 - **Önerilen Özellik:** Önce `/api/transactions` verisiyle CSV dışa aktarma eklenmeli. İkinci aşamada CSV içe aktarma, dry-run doğrulama, satır bazlı hata listesi ve kaydetmeden önce önizleme ekranı eklenmeli.
 - **Başarı Ölçütü:** Kullanıcı işlemlerini CSV olarak indirebilmeli; geçerli bir CSV dosyasını içe aktarmadan önce hata satırlarını görebilmeli.
-- **Bağımlılıklar:** Backend transaction validasyonları ve frontend dosya yükleme akışı
-- **Notlar:** Önerilen kolonlar: Tarih, Sembol, Tür, Adet, Birim Fiyat, Not. `TotalAmount` backend tarafından hesaplandığı için içe aktarımda kaynak değer olarak alınmamalı.
+- **Bağımlılıklar:** Backend transaction validasyonları, asset çözümleme davranışı ve frontend dosya yükleme akışı
+- **Notlar:** Önerilen kolonlar: AssetId, Sembol, Tarih, Tür, Adet, Birim Fiyat, Not. `AssetId` varsa doğrudan kullanılmalı; yoksa sembol mevcut asset resolver davranışıyla çözülmeli. `TotalAmount` backend tarafından hesaplandığı için içe aktarımda kaynak değer olarak alınmamalı.
 
 ## R-2 - Geçmiş performans grafikleri
 - **Durum:** Aday
@@ -105,8 +105,8 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Problem/Fırsat:** Portföy sayfası güncel toplam değer, bakiye ve pozisyon kartlarını gösteriyor; geçmiş portföy değeri saklanmadığı için trend analizi yapılamıyor.
 - **Önerilen Özellik:** Günlük portföy snapshot tablosu eklenmeli ve toplam portföy değeri son 30 gün, 6 ay, 1 yıl gibi aralıklarda çizgi grafikle gösterilmeli.
 - **Başarı Ölçütü:** Kullanıcı portföy değerinin seçili zaman aralığında nasıl değiştiğini tek bakışta anlayabilmeli.
-- **Bağımlılıklar:** Günlük snapshot saklama modeli ve güvenilir fiyat güncelleme akışı
-- **Notlar:** Mevcut `market-data-service` anlık fiyat döndürüyor; geçmiş portföy performansı için ayrıca snapshot üretmek gerekir.
+- **Bağımlılıklar:** Günlük portföy değer snapshot modeli, `PortfolioPositions` read model ve güvenilir fiyat güncelleme akışı
+- **Notlar:** Mevcut `PortfolioPositions` tablosu güncel pozisyon read model'idir; tarihsel trend için ayrı günlük toplam değer snapshot'ı gerekir. `market-data-service` anlık fiyat döndürüyor, geçmiş performans için uygulama kendi günlük değerini saklamalıdır.
 
 ## R-3 - Temettü takibi
 - **Durum:** Aday
@@ -116,9 +116,9 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Öncelik:** P1
 - **Hedef Kullanıcı:** Hisse temettü gelirlerini portföy performansına dahil etmek isteyen kullanıcı.
 - **Problem/Fırsat:** Backend işlem modeli şu an `Buy/Sell` üzerinden çalışıyor; temettü gelirleri gerçekleşmiş performansa dahil edilemiyor.
-- **Önerilen Özellik:** İşlem türlerine `Dividend` eklenmeli; DTO, entity, testler, frontend formu ve `PortfolioCalculations` temettü gelirini ayrı gerçekleşmiş gelir olarak desteklemeli.
+- **Önerilen Özellik:** İşlem türlerine `Dividend` eklenmeli; DTO, entity, testler, frontend formu, `PortfolioCalculations` ve `PortfolioPositions` read model yeniden hesaplama akışı temettü gelirini ayrı gerçekleşmiş gelir olarak desteklemeli.
 - **Başarı Ölçütü:** Kullanıcı varlık bazında ve toplam portföyde temettü gelirini ayrı görebilmeli.
-- **Bağımlılıklar:** Backend işlem türü sözleşmesi ve portföy hesaplama kuralları
+- **Bağımlılıklar:** Backend işlem türü sözleşmesi, portföy hesaplama kuralları ve snapshot recalculation akışı
 - **Notlar:** İlk sürümde temettü ortalama maliyeti düşürmek yerine ayrı gelir olarak gösterilmeli; WAC hesaplaması daha az riskle korunur.
 
 ## R-4 - Portföy dağılımı
@@ -129,10 +129,10 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Öncelik:** P2
 - **Hedef Kullanıcı:** Portföy riskini ve ağırlıklarını görmek isteyen kullanıcı.
 - **Problem/Fırsat:** Pozisyon kartları tek tek piyasa değerini gösteriyor ancak toplam portföy içinde hangi varlığın ne kadar ağırlık taşıdığı görünmüyor.
-- **Önerilen Özellik:** Kullanılabilir fiyatı olan açık pozisyonların toplam piyasa değeri içindeki yüzdesi gösterilmeli; fiyatı olmayan pozisyonlar ayrı "fiyat bekliyor" grubunda belirtilmeli.
+- **Önerilen Özellik:** `/api/portfolio/dashboard` response'undaki açık pozisyonların `marketValue` alanları üzerinden toplam piyasa değeri içindeki yüzdesi gösterilmeli; fiyatı olmayan pozisyonlar ayrı "fiyat bekliyor" grubunda belirtilmeli.
 - **Başarı Ölçütü:** Kullanıcı en yüksek ağırlıklı varlıkları ve dağılım dengesini kolayca okuyabilmeli.
-- **Bağımlılıklar:** `marketPrices` verisi ve `portfolioCalculations.ts` özet hesapları
-- **Notlar:** İlk sürümde grafik yerine kompakt liste veya progress bar daha sade olur; eksik fiyatlar toplam değeri yanıltmamalı.
+- **Bağımlılıklar:** `PortfolioPositions` read model, dashboard summary ve güncel market price akışı
+- **Notlar:** İlk sürümde grafik yerine kompakt liste veya progress bar daha sade olur; eksik fiyatlar toplam değeri yanıltmamalı. Finansal hesap frontend'e taşınmamalı, frontend yalnızca backend'den gelen değerleri oranlayıp göstermeli.
 
 ## R-5 - Komisyon ve vergi giderleri
 - **Durum:** Aday
@@ -142,9 +142,9 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Öncelik:** P1
 - **Hedef Kullanıcı:** Kâr/zarar hesabını net maliyetlerle takip etmek isteyen kullanıcı.
 - **Problem/Fırsat:** `TotalAmount` backend'de adet ve birim fiyat üzerinden hesaplanıyor; komisyon ve vergi giderleri WAC ve K/Z değerlerine dahil edilmiyor.
-- **Önerilen Özellik:** Transaction modeline komisyon ve opsiyonel gider alanları eklenmeli; backend WAC hesaplaması, frontend önizlemesi ve integration testler net maliyeti kullanmalı.
+- **Önerilen Özellik:** Transaction modeline komisyon ve opsiyonel gider alanları eklenmeli; backend WAC hesaplaması, `PortfolioPositions` snapshot değerleri, frontend form önizlemesi ve integration testler net maliyeti kullanmalı.
 - **Başarı Ölçütü:** Kullanıcı net maliyet ve net gerçekleşmiş K/Z değerlerini görebilmeli.
-- **Bağımlılıklar:** EF migration, DTO güncellemesi, `PortfolioCalculations.cs` ve `portfolioCalculations.ts`
+- **Bağımlılıklar:** EF migration, DTO güncellemesi, `PortfolioCalculations.cs`, snapshot recalculation akışı ve `transactionForm` önizleme helper'ları
 - **Notlar:** İlk sürümde tek `Commission` alanı yeterli olabilir; toplam değer yine backend tarafından authoritative hesaplanmalı.
 
 ## R-6 - Terminal istemcisi
@@ -157,7 +157,7 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Problem/Fırsat:** Docker veya lokal API çalışırken portföy özetine ulaşmak için web arayüzünü açmak gerekiyor.
 - **Önerilen Özellik:** `portfolio status`, `portfolio positions`, `portfolio cash` gibi komutlarla mevcut API endpoint'lerinden özet bilgi çeken basit bir CLI istemcisi.
 - **Başarı Ölçütü:** Kullanıcı terminalden toplam değer, bakiye ve K/Z özetini alabilmeli.
-- **Bağımlılıklar:** `GET /api/portfolio/positions`, `GET /api/portfolio/cash-balance`, `GET /api/market-prices`
+- **Bağımlılıklar:** `GET /api/portfolio/dashboard` ve lokal/API erişim yapılandırması
 - **Notlar:** Web arayüzünün iş mantığı tekrar edilmemeli; CLI yalnızca API client olmalı.
 
 ## R-7 - Otomatik bildirimler
@@ -170,8 +170,8 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Problem/Fırsat:** Fiyatlar arka planda güncellenebiliyor ancak hedef fiyat, günlük özet veya yüksek değişim gibi olaylar kullanıcıya otomatik iletilmiyor.
 - **Önerilen Özellik:** Telegram, Discord veya benzeri kanal üzerinden günlük portföy özeti ve isteğe bağlı hedef fiyat bildirimleri gönderilmeli.
 - **Başarı Ölçütü:** Kullanıcı belirlediği koşullarda otomatik bildirim alabilmeli.
-- **Bağımlılıklar:** Hedef fiyat kural modeli, fiyat worker yapılandırması ve issues.md #3
-- **Notlar:** Önce günlük özet bildirimi eklenmeli; fiyat tetikleyicileri worker çakışması netleştikten sonra daha güvenli olur.
+- **Bağımlılıklar:** Hedef fiyat kural modeli, fiyat worker yapılandırması, notification channel secrets ve güvenilir `PortfolioPositions` güncelleme akışı
+- **Notlar:** Önce günlük özet bildirimi eklenmeli; fiyat tetikleyicileri event/worker akışı netleştikten sonra daha güvenli olur.
 
 ## R-8 - Endeks kıyaslaması
 - **Durum:** Aday
@@ -261,7 +261,7 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Problem/Fırsat:** Geliştirme sırasında portföy durumunu kontrol etmek için tarayıcı veya terminale geçmek gerekiyor.
 - **Önerilen Özellik:** VS Code status bar üzerinde toplam değer, bakiye veya K/Z özetini gösteren küçük bir eklenti.
 - **Başarı Ölçütü:** Kullanıcı editörden çıkmadan portföy özetini görebilmeli.
-- **Bağımlılıklar:** Lokal veya dev compose API erişimi
+- **Bağımlılıklar:** Lokal API erişimi veya Cloudflare üzerinden erişilebilir API
 - **Notlar:** R-6 ve R-15 ile ortak API client mantığı paylaşılmalı; ayrı iş mantığı yazılmamalı.
 
 ## R-15 - Raycast entegrasyonu
@@ -284,11 +284,11 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Efor:** Orta
 - **Öncelik:** P2
 - **Hedef Kullanıcı:** Hisse dışında döviz, altın veya fon gibi farklı varlıkları aynı portföyde izlemek isteyen kullanıcı.
-- **Problem/Fırsat:** `market-data-service` hisse/fon için normalize quote döndürebiliyor ancak transaction modelinde açık bir `assetType` alanı yok; sembol tahmini özellikle fon ve farklı varlıklarda belirsiz kalabilir.
-- **Önerilen Özellik:** İşlem ve portföy akışına varlık türü eklenmeli; hisse, fon, döviz, emtia ve manuel takip edilen varlıklar ayrı format ve fiyat kaynağıyla yönetilmeli.
+- **Problem/Fırsat:** Asset katalog modeli `AssetType` ve transaction tarafında `AssetId` ilişkisini destekliyor; ancak fiyat sağlayıcı, frontend seçimleri, adet/değer formatları ve para birimi davranışları ağırlıklı olarak hisse/fon/custom senaryolarına göre şekillenmiş durumda.
+- **Önerilen Özellik:** Döviz, altın, emtia ve manuel takip edilen farklı varlık türleri için katalog/fiyat kaynağı, formatlama, currency ve asset autocomplete davranışı genişletilmeli. Transaction akışı mümkün olduğunca `AssetId` üzerinden kalmalı; symbol-only fallback yalnızca geriye dönük uyumluluk için kullanılmalı.
 - **Başarı Ölçütü:** Kullanıcı farklı varlık türlerini aynı portföyde doğru fiyat, adet ve değer formatıyla izleyebilmeli.
-- **Bağımlılıklar:** Transaction DTO/entity değişikliği ve `market-data-service` assetType kontratı
-- **Notlar:** İlk sürümde otomatik tespit yerine kullanıcı seçimi daha güvenilir olabilir; mevcut `auto` davranış korunabilir ama tek kaynak olmamalı.
+- **Bağımlılıklar:** Asset katalog genişletmesi, `market-data-service` assetType/quote kontratı, frontend asset type filtreleri ve formatlama kuralları
+- **Notlar:** İlk sürümde otomatik tespit yerine kullanıcı seçimi daha güvenilir olabilir; mevcut `auto` davranış korunabilir ama tek kaynak olmamalı. Mevcut `Asset.AssetType` alanı genişletilmeli, transaction entity'sine ayrı asset type kopyası eklenmemeli.
 
 ## R-17 - Aracı kurum ekstre ayrıştırıcısı
 - **Durum:** Aday
@@ -297,7 +297,7 @@ Yeni fikir eklerken aşağıdaki biçimi kullan:
 - **Efor:** Yüksek
 - **Öncelik:** P2
 - **Hedef Kullanıcı:** İşlemlerini manuel girmek istemeyen veya geçmiş verisini toplu aktarmak isteyen kullanıcı.
-- **Problem/Fırsat:** Aracı kurum işlem dökümlerindeki verileri `TransactionFormPanel` ile tek tek girmek zaman alıyor ve veri giriş hatası yaratıyor.
+- **Problem/Fırsat:** Aracı kurum işlem dökümlerindeki verileri `TransactionFormModal` ile tek tek girmek zaman alıyor ve veri giriş hatası yaratıyor.
 - **Önerilen Özellik:** Önce CSV/Excel ekstreleri, sonra gerekirse PDF ekstreleri yüklenerek alış/satış işlemleri ayrıştırılmalı; kullanıcı kaydetmeden önce doğrulama ekranında satırları onaylamalı.
 - **Başarı Ölçütü:** Kullanıcı geçerli bir ekstre dosyasından işlem kayıtlarını manuel giriş yapmadan oluşturabilmeli.
 - **Bağımlılıklar:** R-1 CSV içe aktarma doğrulama altyapısı

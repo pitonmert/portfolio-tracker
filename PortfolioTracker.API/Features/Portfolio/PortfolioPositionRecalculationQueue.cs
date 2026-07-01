@@ -3,6 +3,7 @@ using System.Threading.Channels;
 
 namespace PortfolioTracker.API.Features.Portfolio;
 
+// Serializes portfolio read-model updates and drops duplicate asset work while it is pending.
 public class PortfolioPositionRecalculationQueue : IPortfolioPositionRecalculationQueue
 {
     private readonly Channel<PortfolioPositionRecalculationRequest> _queue =
@@ -27,6 +28,7 @@ public class PortfolioPositionRecalculationQueue : IPortfolioPositionRecalculati
 
         if (_processingAssets.ContainsKey(assetId))
         {
+            // The current run will finish first, then the dirty asset is queued once more.
             _dirtyProcessingAssets.TryAdd(assetId, 0);
             return;
         }
@@ -40,9 +42,7 @@ public class PortfolioPositionRecalculationQueue : IPortfolioPositionRecalculati
         );
     }
 
-    public async ValueTask EnqueueRebuildAllAsync(
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask EnqueueRebuildAllAsync(CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _rebuildPending, 1) == 1)
             return;

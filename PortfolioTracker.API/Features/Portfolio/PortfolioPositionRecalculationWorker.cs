@@ -1,5 +1,6 @@
 namespace PortfolioTracker.API.Features.Portfolio;
 
+// Runs recalculation jobs outside the write request that triggered them.
 public class PortfolioPositionRecalculationWorker(
     IPortfolioPositionRecalculationQueue queue,
     IServiceScopeFactory scopeFactory,

@@ -16,9 +16,7 @@ public class AdminReadModelsController(
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RebuildPortfolioPositions(
-        CancellationToken cancellationToken
-    )
+    public async Task<IActionResult> RebuildPortfolioPositions(CancellationToken cancellationToken)
     {
         var configuredToken = configuration["Admin:ReadModelRebuildToken"];
         if (string.IsNullOrWhiteSpace(configuredToken))

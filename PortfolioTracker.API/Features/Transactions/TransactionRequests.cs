@@ -3,12 +3,9 @@ using PortfolioTracker.API.Domain.Entities;
 
 namespace PortfolioTracker.API.Features.Transactions;
 
-/// <summary>
-/// Payload for creating a new investment transaction.
-/// </summary>
 public record CreateTransactionRequest(
     int? AssetId,
-    [Required, MaxLength(120)] string Symbol,
+    [MaxLength(120)] string? Symbol,
     [Range(0.00000001, double.MaxValue)] decimal Quantity,
     [Range(0.00000001, double.MaxValue)] decimal UnitPrice,
     [MaxLength(500)] string? Note,
@@ -16,14 +13,10 @@ public record CreateTransactionRequest(
     DateTime? TransactionDate
 );
 
-/// <summary>
-/// Payload for updating an existing investment transaction.
-/// The <see cref="Id"/> must match the route parameter to prevent accidental overwrites.
-/// </summary>
 public record UpdateTransactionRequest(
     int Id,
     int? AssetId,
-    [Required, MaxLength(120)] string Symbol,
+    [MaxLength(120)] string? Symbol,
     [Range(0.00000001, double.MaxValue)] decimal Quantity,
     [Range(0.00000001, double.MaxValue)] decimal UnitPrice,
     [MaxLength(500)] string? Note,
@@ -31,9 +24,6 @@ public record UpdateTransactionRequest(
     DateTime? TransactionDate
 );
 
-/// <summary>
-/// Query parameters accepted by the GET /transactions endpoint for filtering results.
-/// </summary>
 public record TransactionQuery(
     [EnumDataType(typeof(TransactionType))] TransactionType? Type,
     [MaxLength(120)] string? Search,
