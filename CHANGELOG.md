@@ -10,13 +10,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Added public repository documentation, license, and changelog.
-- Added direct portfolio calculation edge case tests.
+- Expanded portfolio calculation edge case test coverage.
 
 ### Changed
 
+- Cleaned market data service artifacts and pinned service dependencies.
 - Standardized API formatting and comments.
-- Updated planning documents to match the current architecture.
-- Pinned market data service dependencies.
 
 ### Fixed
 
@@ -27,7 +26,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Removed
 
-- Removed the tracked borsapy data probe and copied provider guide.
+- Removed tracked market data probe artifacts and copied provider guide.
 
 ## [v0.2.0] - 2026-07-01
 
@@ -36,12 +35,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added catalog-backed asset search and asset relationship model.
 - Added market data service integration with live quotes and manual price overrides.
 - Added backend dashboard responses and portfolio position read models.
-- Added frontend test infrastructure with Vitest and React Testing Library.
-- Added backend integration tests for assets, portfolio, market prices, and transactions.
+- Added portfolio position snapshots for faster dashboard reads.
+- Added frontend and backend test coverage.
 
 ### Changed
 
 - Centralized portfolio calculations in backend dashboard responses and read models.
+- Reorganized API structure around domain entities, infrastructure, and feature modules.
 - Improved transaction forms, portfolio cards, summary panels, and history modals.
 - Updated Docker, environment configuration, and project documentation.
 
@@ -50,4 +50,5 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Initialized the Portfolio Tracker web application.
-- Added the initial API, frontend, database, and Docker project structure.
+- Added the initial API, frontend, database, Docker, and market data service structure.
+- Established the base portfolio tracking workflow.
