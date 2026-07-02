@@ -214,6 +214,7 @@ Market data service:
 
 ```bash
 cd market-data-service
+pip install -r requirements.txt
 python3 -m pytest
 ```
 
