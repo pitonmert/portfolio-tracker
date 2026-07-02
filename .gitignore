@@ -1,0 +1,121 @@
+## .NET / C# build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+## NuGet packages
+*.nupkg
+**/packages/*
+*.nuget.props
+*.nuget.targets
+
+## Visual Studio / Rider files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.idea/
+*.DotSettings.user
+
+## VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+## User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Build outputs
+[Dd]ebugPublic/
+[Rr]eleases/
+build/
+bld/
+*_i.c
+*_p.c
+*_h.h
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*_wpftmp.csproj
+*.log
+*.tlog
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+*.lscache
+
+## Test outputs
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+test/
+!PortfolioTracker.Frontend/src/test/
+!PortfolioTracker.Frontend/src/test/**
+
+## Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+## Publish profiles
+*.publishsettings
+PublishProfiles/
+
+## OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Environment variables and secret files
+*.env
+*.env.local
+*.env.*.local
+appsettings.*.local.json
+
+## Log files
+logs/
+*.log
+
+## Docker
+docker-compose.override.yml
+
+## Entity Framework migration temporary files
+*.jfm
+.claude/
+notes.txt
+
+/db-backups/
+
+/docs/

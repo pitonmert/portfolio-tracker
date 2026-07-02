@@ -1,0 +1,70 @@
+services:
+  market-data-service:
+    build:
+      context: ./market-data-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./PortfolioTracker.API
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__DefaultConnection: ${ConnectionStrings__DefaultConnection:?Set ConnectionStrings__DefaultConnection in your environment or .env file}
+      Database__AutoMigrate: "true"
+      Https__Redirect: "false"
+      MarketData__BaseUrl: http://market-data-service:8000
+    depends_on:
+      market-data-service:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-5219}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./PortfolioTracker.Frontend
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command:
+      [
+        "tunnel",
+        "--no-autoupdate",
+        "run",
+        "--token",
+        "${CLOUDFLARE_TUNNEL_TOKEN:-}",
+      ]
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    profiles:
+      - tunnel

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="tests/PortfolioTracker.API.IntegrationTests/PortfolioTracker.API.IntegrationTests.csproj" />
+  <Project Path="PortfolioTracker.API/PortfolioTracker.API.csproj" />
+</Solution>
