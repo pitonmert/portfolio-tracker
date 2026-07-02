@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using PortfolioTracker.API.Domain.Entities;
 using PortfolioTracker.API.Features.MarketPrices;
 using PortfolioTracker.API.Infrastructure.Persistence;
@@ -10,25 +9,6 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
     : IPortfolioPositionRecalculationService
 {
     public async Task RecalculateAssetAsync(int assetId, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 2; attempt++)
-        {
-            try
-            {
-                await RecalculateAssetCoreAsync(assetId, cancellationToken);
-                return;
-            }
-            catch (DbUpdateException ex) when (IsUniqueViolation(ex) && attempt == 0)
-            {
-                // A concurrent insert can win the race; reload state and apply the snapshot again.
-                context.ChangeTracker.Clear();
-            }
-        }
-
-        await RecalculateAssetCoreAsync(assetId, cancellationToken);
-    }
-
-    private async Task RecalculateAssetCoreAsync(int assetId, CancellationToken cancellationToken)
     {
         if (assetId <= 0)
             return;
@@ -41,20 +21,12 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
             .ThenBy(transaction => transaction.Id)
             .ToListAsync(cancellationToken);
 
-        var snapshot = await context.PortfolioPositions.FirstOrDefaultAsync(
-            position => position.AssetId == assetId,
-            cancellationToken
-        );
-
         if (transactions.Count == 0)
         {
             // A deleted last transaction removes the rebuildable read-model row.
-            if (snapshot is not null)
-            {
-                context.PortfolioPositions.Remove(snapshot);
-                await context.SaveChangesAsync(cancellationToken);
-            }
-
+            await context
+                .PortfolioPositions.Where(position => position.AssetId == assetId)
+                .ExecuteDeleteAsync(cancellationToken);
             return;
         }
 
@@ -68,19 +40,15 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
         var quote = marketPrice is null ? null : MarketPriceQuoteFactory.ToQuote(marketPrice);
         var dashboardPosition = PortfolioCalculations.CalculateDashboardPosition(position, quote);
 
-        snapshot ??= new PortfolioPositionSnapshot { AssetId = assetId };
-        ApplySnapshot(
-            snapshot,
+        var snapshot = CreateSnapshot(
+            assetId,
             dashboardPosition,
             transactions.Max(transaction => transaction.Date),
             marketPrice?.ManualUpdatedAt ?? marketPrice?.FetchedAt,
             DateTime.UtcNow
         );
 
-        if (context.Entry(snapshot).State == EntityState.Detached)
-            context.PortfolioPositions.Add(snapshot);
-
-        await context.SaveChangesAsync(cancellationToken);
+        await UpsertSnapshotAsync(snapshot, cancellationToken);
     }
 
     public async Task RebuildAllAsync(CancellationToken cancellationToken)
@@ -109,33 +77,100 @@ public class PortfolioPositionRecalculationService(ApplicationDbContext context)
         }
     }
 
-    private static void ApplySnapshot(
-        PortfolioPositionSnapshot snapshot,
+    private static PortfolioPositionSnapshot CreateSnapshot(
+        int assetId,
         PortfolioDashboardPosition position,
         DateTime lastTransactionAt,
         DateTime? priceUpdatedAt,
         DateTime calculatedAt
     )
     {
-        snapshot.Symbol = position.Symbol;
-        snapshot.Market = position.Market;
-        snapshot.NetQuantity = position.NetQuantity;
-        snapshot.AverageCost = position.AverageCost;
-        snapshot.TotalInvested = position.TotalInvested;
-        snapshot.RealizedPnL = position.RealizedPnL;
-        snapshot.ActivePositionCost = position.ActivePositionCost;
-        snapshot.CurrentPrice = position.CurrentPrice;
-        snapshot.MarketValue = position.MarketValue;
-        snapshot.UnrealizedPnL = position.UnrealizedPnL;
-        snapshot.TotalPnL = position.TotalPnL;
-        snapshot.PnLPercent = position.PnLPercent;
-        snapshot.IsClosed = position.IsClosed;
-        snapshot.LastTransactionAt = lastTransactionAt;
-        snapshot.PriceUpdatedAt = priceUpdatedAt;
-        snapshot.CalculatedAt = calculatedAt;
+        return new PortfolioPositionSnapshot
+        {
+            AssetId = assetId,
+            Symbol = position.Symbol,
+            Market = position.Market,
+            NetQuantity = position.NetQuantity,
+            AverageCost = position.AverageCost,
+            TotalInvested = position.TotalInvested,
+            RealizedPnL = position.RealizedPnL,
+            ActivePositionCost = position.ActivePositionCost,
+            CurrentPrice = position.CurrentPrice,
+            MarketValue = position.MarketValue,
+            UnrealizedPnL = position.UnrealizedPnL,
+            TotalPnL = position.TotalPnL,
+            PnLPercent = position.PnLPercent,
+            IsClosed = position.IsClosed,
+            LastTransactionAt = lastTransactionAt,
+            PriceUpdatedAt = priceUpdatedAt,
+            CalculatedAt = calculatedAt,
+        };
     }
 
-    private static bool IsUniqueViolation(DbUpdateException exception) =>
-        exception.InnerException is PostgresException postgresException
-        && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
+    private async Task UpsertSnapshotAsync(
+        PortfolioPositionSnapshot snapshot,
+        CancellationToken cancellationToken
+    )
+    {
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "PortfolioPositions" (
+                "AssetId",
+                "Symbol",
+                "Market",
+                "NetQuantity",
+                "AverageCost",
+                "TotalInvested",
+                "RealizedPnL",
+                "ActivePositionCost",
+                "CurrentPrice",
+                "MarketValue",
+                "UnrealizedPnL",
+                "TotalPnL",
+                "PnLPercent",
+                "IsClosed",
+                "LastTransactionAt",
+                "PriceUpdatedAt",
+                "CalculatedAt"
+            )
+            VALUES (
+                {snapshot.AssetId},
+                {snapshot.Symbol},
+                {snapshot.Market},
+                {snapshot.NetQuantity},
+                {snapshot.AverageCost},
+                {snapshot.TotalInvested},
+                {snapshot.RealizedPnL},
+                {snapshot.ActivePositionCost},
+                {snapshot.CurrentPrice},
+                {snapshot.MarketValue},
+                {snapshot.UnrealizedPnL},
+                {snapshot.TotalPnL},
+                {snapshot.PnLPercent},
+                {snapshot.IsClosed},
+                {snapshot.LastTransactionAt},
+                {snapshot.PriceUpdatedAt},
+                {snapshot.CalculatedAt}
+            )
+            ON CONFLICT ("AssetId") DO UPDATE SET
+                "Symbol" = EXCLUDED."Symbol",
+                "Market" = EXCLUDED."Market",
+                "NetQuantity" = EXCLUDED."NetQuantity",
+                "AverageCost" = EXCLUDED."AverageCost",
+                "TotalInvested" = EXCLUDED."TotalInvested",
+                "RealizedPnL" = EXCLUDED."RealizedPnL",
+                "ActivePositionCost" = EXCLUDED."ActivePositionCost",
+                "CurrentPrice" = EXCLUDED."CurrentPrice",
+                "MarketValue" = EXCLUDED."MarketValue",
+                "UnrealizedPnL" = EXCLUDED."UnrealizedPnL",
+                "TotalPnL" = EXCLUDED."TotalPnL",
+                "PnLPercent" = EXCLUDED."PnLPercent",
+                "IsClosed" = EXCLUDED."IsClosed",
+                "LastTransactionAt" = EXCLUDED."LastTransactionAt",
+                "PriceUpdatedAt" = EXCLUDED."PriceUpdatedAt",
+                "CalculatedAt" = EXCLUDED."CalculatedAt";
+            """,
+            cancellationToken
+        );
+    }
 }
