@@ -12,7 +12,7 @@ export default function AppLayout() {
   const { activeToast } = useToast();
 
   return (
-    <div className="relative flex h-full w-full min-h-0 flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--ink)]">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--ink)]">
       <header className="z-20 flex min-w-0 shrink-0 items-center justify-between gap-4 border-b border-[color:var(--nav-line)] bg-[var(--nav-bg)] px-4 py-1.5 backdrop-blur-xl transition-colors">
         {/* Left: project name */}
         <div className="flex shrink-0 items-center">

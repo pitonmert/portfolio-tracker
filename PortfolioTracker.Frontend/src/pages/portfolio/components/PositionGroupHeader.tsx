@@ -62,14 +62,14 @@ export function PositionGroupHeader({
           </span>
           <span className="text-xs">{selectedInitial}</span>
           <ChevronsUpDownIcon
-            className="h-3.5 w-3.5 -mr-1 -ml-1"
+            className="-mr-1 -ml-1 h-3.5 w-3.5"
             aria-hidden="true"
           />
         </button>
 
         {dropdownOpen && (
           <div
-            className="absolute right-0 top-full mt-1.5 z-30 w-max min-w-[140px] rounded-xl border border-[color:var(--line-soft)] bg-[var(--bg)] p-1.5 shadow-[var(--paper-shadow)]"
+            className="absolute top-full right-0 z-30 mt-1.5 w-max min-w-[140px] rounded-xl border border-[color:var(--line-soft)] bg-[var(--bg)] p-1.5 shadow-[var(--paper-shadow)]"
             style={{ animation: "slide-up 0.15s ease-out" }}
             role="listbox"
             aria-label="K/Z metriği"
@@ -83,7 +83,7 @@ export function PositionGroupHeader({
                   className={cx(
                     "flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
                     active
-                      ? "bg-[var(--bg-2)] text-[var(--accent)] gap-2"
+                      ? "gap-2 bg-[var(--bg-2)] text-[var(--accent)]"
                       : "text-[var(--ink-2)] hover:bg-[var(--bg-2)] hover:text-[var(--ink)]",
                   )}
                   type="button"

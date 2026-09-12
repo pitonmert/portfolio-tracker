@@ -13,9 +13,7 @@ import { ManualPriceModal } from "./ManualPriceModal";
 // --- TYPES & INTERFACES ---
 
 export type PositionDisplayMetric =
-  | "totalPnL"
-  | "unrealizedPnL"
-  | "realizedPnL";
+  "totalPnL" | "unrealizedPnL" | "realizedPnL";
 
 // --- MAIN COMPONENT ---
 interface PositionCardProps {

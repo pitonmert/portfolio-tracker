@@ -34,9 +34,6 @@ is needed, place the application behind your own protection layer, such as:
 - reverse proxy authentication
 - another trusted access control gateway
 
-The optional Cloudflare Tunnel support only provides connectivity. It does not
-replace access control by itself.
-
 ## Secrets and Sensitive Data
 
 Keep the following out of git:
@@ -45,7 +42,6 @@ Keep the following out of git:
 - .NET user secrets
 - PostgreSQL credentials
 - database dumps and backup files
-- Cloudflare tunnel tokens
 - `Admin:ReadModelRebuildToken`
 - any other local provider or infrastructure credentials
 

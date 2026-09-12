@@ -49,7 +49,7 @@ Important backend concepts:
 - Frontend: React, Vite, TypeScript, TanStack Query, Tailwind CSS
 - Market data: FastAPI, [borsapy](https://github.com/saidsurucu/borsapy/)
 - Tests: xUnit integration tests, Vitest, React Testing Library, pytest
-- Deployment: Docker Compose, optional Cloudflare Tunnel
+- Deployment: Docker Compose
 
 ## Project Structure
 
@@ -73,7 +73,9 @@ docker-compose.yml                 production-like app stack
 
 ## Local Development
 
-Local development runs only PostgreSQL externally. The market-data service, API, and frontend run on the host machine.
+Use this mode while actively developing the app. PostgreSQL runs externally, and
+the market-data service, API, and frontend run directly on the host machine with
+hot reload.
 
 Default local ports:
 
@@ -157,7 +159,10 @@ VITE_DEV_PROXY_TARGET=http://localhost:5220
 
 ## Production-like Docker Run
 
-The Docker Compose file does not create a PostgreSQL container. You must provide an external PostgreSQL database and pass its connection string through the environment.
+Use this mode when you want to run the application like a deployed stack. Docker
+Compose builds and runs the market-data service, API, and frontend containers.
+PostgreSQL is still external; the compose file does not create a database
+container.
 
 Create a local `.env` from the template:
 
@@ -169,21 +174,12 @@ Edit `.env`:
 
 ```bash
 ConnectionStrings__DefaultConnection=Host=host.docker.internal;Port=5432;Database=portfolio_tracker;Username=postgres;Password=your_password
-API_PORT=5219
-FRONTEND_PORT=5173
-CLOUDFLARE_TUNNEL_TOKEN=your_cloudflare_tunnel_token
 ```
 
 Run the production-like stack:
 
 ```bash
 docker compose up -d --build
-```
-
-With Cloudflare Tunnel:
-
-```bash
-docker compose --profile tunnel up -d --build
 ```
 
 Docker ports:

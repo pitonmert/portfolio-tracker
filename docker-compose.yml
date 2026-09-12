@@ -3,8 +3,6 @@ services:
     build:
       context: ./market-data-service
       dockerfile: Dockerfile
-    ports:
-      - "8001:8000"
     healthcheck:
       test:
         [
@@ -32,8 +30,6 @@ services:
     depends_on:
       market-data-service:
         condition: service_healthy
-    ports:
-      - "${API_PORT:-5219}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
@@ -49,22 +45,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-5173}:8080"
+    networks:
+      default: {}
+      cloudflare_network:
+        aliases:
+          - portfolio-tracker-frontend
     restart: unless-stopped
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    command:
-      [
-        "tunnel",
-        "--no-autoupdate",
-        "run",
-        "--token",
-        "${CLOUDFLARE_TUNNEL_TOKEN:-}",
-      ]
-    depends_on:
-      - frontend
-    restart: unless-stopped
-    profiles:
-      - tunnel
+networks:
+  cloudflare_network:
+    external: true
