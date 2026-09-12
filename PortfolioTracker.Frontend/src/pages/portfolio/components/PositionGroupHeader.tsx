@@ -42,9 +42,7 @@ export function PositionGroupHeader({
     <div className="flex items-center justify-between border-b pb-1 font-semibold tabular-nums select-none">
       <h3 className="flex items-center gap-2">
         {title}
-        <span className="text-xs text-[var(--ink-3)]">
-          {updatedTime ?? "-"}
-        </span>
+        <span className="text-xs text-(--ink-3)">{updatedTime ?? "-"}</span>
       </h3>
 
       <div className="relative flex flex-col items-end">
@@ -69,7 +67,7 @@ export function PositionGroupHeader({
 
         {dropdownOpen && (
           <div
-            className="absolute top-full right-0 z-30 mt-1.5 w-max min-w-[140px] rounded-xl border border-[color:var(--line-soft)] bg-[var(--bg)] p-1.5 shadow-[var(--paper-shadow)]"
+            className="absolute top-full right-0 z-30 mt-1.5 w-max min-w-35 rounded-xl border border-(--line-soft) bg-(--bg) p-1.5 shadow-(--paper-shadow)"
             style={{ animation: "slide-up 0.15s ease-out" }}
             role="listbox"
             aria-label="K/Z metriği"
@@ -83,8 +81,8 @@ export function PositionGroupHeader({
                   className={cx(
                     "flex w-full items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
                     active
-                      ? "gap-2 bg-[var(--bg-2)] text-[var(--accent)]"
-                      : "text-[var(--ink-2)] hover:bg-[var(--bg-2)] hover:text-[var(--ink)]",
+                      ? "gap-2 bg-(--bg-2) text-(--accent)"
+                      : "text-(--ink-2) hover:bg-(--bg-2) hover:text-(--ink)",
                   )}
                   type="button"
                   role="option"

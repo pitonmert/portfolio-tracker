@@ -12,8 +12,8 @@ export default function AppLayout() {
   const { activeToast } = useToast();
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--ink)]">
-      <header className="z-20 flex min-w-0 shrink-0 items-center justify-between gap-4 border-b border-[color:var(--nav-line)] bg-[var(--nav-bg)] px-4 py-1.5 backdrop-blur-xl transition-colors">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-(--page-bg) text-(--ink)">
+      <header className="z-20 flex min-w-0 shrink-0 items-center justify-between gap-4 border-b border-(--nav-line) bg-(--nav-bg) px-4 py-1.5 backdrop-blur-xl transition-colors">
         {/* Left: project name */}
         <div className="flex shrink-0 items-center">
           <a href="/" className={brandLinkClass}>
@@ -28,20 +28,20 @@ export default function AppLayout() {
               key={activeToast.id}
               className={`inline-flex min-w-0 shrink items-center gap-2 rounded-full border px-3 py-1 shadow-sm transition-all select-none ${
                 activeToast.type === "error"
-                  ? "border-[var(--expense)] bg-[var(--expense)] text-white"
-                  : "border-[color:var(--line)] bg-[var(--bg)] text-[var(--ink)]"
+                  ? "border-(--expense) bg-(--expense) text-white"
+                  : "border-(--line) bg-(--bg) text-(--ink)"
               }`}
             >
               <span
                 className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${
                   activeToast.type === "error"
-                    ? "bg-white text-[var(--expense)]"
-                    : "bg-[var(--accent)] text-[var(--on-accent)]"
+                    ? "bg-white text-(--expense)"
+                    : "bg-(--accent) text-(--on-accent)"
                 }`}
               >
                 {activeToast.type === "error" ? "!" : "✓"}
               </span>
-              <span className="mt-[1px] truncate font-[family-name:var(--font-mono)] text-xs font-semibold uppercase">
+              <span className="mt-px truncate font-mono text-xs font-semibold uppercase">
                 {activeToast.message}
               </span>
             </div>

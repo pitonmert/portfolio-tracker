@@ -67,7 +67,7 @@ export function PositionCard({
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate">{position.symbol}</span>
-            <span className="shrink-0 text-xs text-[var(--ink-3)] before:mr-1.5 before:content-['•']">
+            <span className="shrink-0 text-xs text-(--ink-3) before:mr-1.5 before:content-['•']">
               {isClosed
                 ? "Kapalı"
                 : `${formatNumber(position.netQuantity)} Adet`}
@@ -142,7 +142,7 @@ function CurrentPriceMetric({
     >
       {showMissingPriceEntry ? (
         <button
-          className="inline-flex h-6 items-center justify-center rounded-md bg-[var(--accent)] px-2.5 text-[11px] font-medium text-[var(--on-accent)] transition-all hover:bg-[var(--accent-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-6 items-center justify-center rounded-md bg-(--accent) px-2.5 text-[11px] font-medium text-(--on-accent) transition-all hover:bg-(--accent-hover) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent) disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={openModal}
         >
@@ -150,15 +150,15 @@ function CurrentPriceMetric({
         </button>
       ) : (
         <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-medium text-[var(--ink-2)]">
+          <span className="text-sm font-medium text-(--ink-2)">
             {formatMarketPrice(quote, loading)}
           </span>
           {isManualPrice && (
-            <div className="flex items-center gap-1.5 before:text-xs before:font-medium before:text-[var(--ink-3)] before:content-['•']">
+            <div className="flex items-center gap-1.5 before:text-xs before:font-medium before:text-(--ink-3) before:content-['•']">
               <button
                 type="button"
                 onClick={openModal}
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[var(--ink-3)] transition-all hover:bg-[var(--bg-2)] hover:text-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="text-(--ink-3)sition-all hover:bg-(--bg-2)r:text-[var(--accent)] inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
                 aria-label="Fiyatı düzenle"
                 title="Fiyatı düzenle"
               >
